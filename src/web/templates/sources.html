@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}数据源状态{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">运行状态</p>
+  <h1>数据源状态</h1>
+  <p class="summary">公开页面只展示可读摘要，不暴露服务器路径、密钥或异常堆栈。</p>
+</section>
+<section class="panel">
+  {% if not sources %}
+  <p>暂无数据源状态。请先运行数据管道。</p>
+  {% else %}
+  <table class="dashboard">
+    <thead><tr><th>数据源</th><th>最新数据日期</th><th>最近下载</th><th>状态</th><th>说明</th></tr></thead>
+    <tbody>
+      {% for source in sources %}
+      <tr>
+        <td>{{ source.source_name }}</td>
+        <td>{{ source.latest_data_date or "-" }}</td>
+        <td>{{ source.downloaded_at or "-" }}</td>
+        <td>{{ source.status }}</td>
+        <td>{{ source.message or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

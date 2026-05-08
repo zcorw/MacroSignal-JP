@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Test / tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime data
+data/app.db
+data/*.db
+data/raw/**
+data/processed/**
+data/manual/**
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/manual/.gitkeep
+logs/**
+!logs/.gitkeep
+outputs/**
+!outputs/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Docker local overrides
+docker-compose.override.yml

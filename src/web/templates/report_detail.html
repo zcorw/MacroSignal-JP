@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}报告详情{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">报告详情 · {{ bundle.report.report_date }}</p>
+  <h1>{{ bundle.report.title }}</h1>
+  <p class="summary">{{ bundle.report.summary_text }}</p>
+</section>
+<section class="grid grid-2">
+  <article class="panel report-body">
+    {% for section in bundle.sections %}
+    <h2>{{ section.title }}</h2>
+    <p>{{ section.body }}</p>
+    {% endfor %}
+  </article>
+  <aside class="panel">
+    <h2>关键证据</h2>
+    <ul class="evidence">
+      {% for item in bundle.evidence %}
+      <li>{{ item.text }}</li>
+      {% endfor %}
+    </ul>
+  </aside>
+</section>
+<section class="section">
+  <h2>图表</h2>
+  <div class="grid grid-2">
+    <div class="chart" data-chart="gdp_growth"></div>
+    <div class="chart" data-chart="wage_vs_cpi"></div>
+    <div class="chart" data-chart="private_consumption"></div>
+    <div class="chart" data-chart="private_investment"></div>
+    <div class="chart" data-chart="market_pressure"></div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', path='charts.js') }}"></script>
+{% endblock %}

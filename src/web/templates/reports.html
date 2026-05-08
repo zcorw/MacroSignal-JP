@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}历史报告{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">报告归档</p>
+  <h1>历史报告</h1>
+</section>
+{% if not reports %}
+<section class="empty"><p>暂无历史报告。</p></section>
+{% else %}
+<section class="report-list">
+  {% for report in reports %}
+  <div class="report-row">
+    <strong>{{ report.report_date }}</strong>
+    <div><span class="label">{{ report.summary_label }}</span><div class="muted">{{ report.data_coverage or "" }}</div></div>
+    <div class="muted">真实 {{ report.real_growth_score }} / 通胀 {{ report.inflation_pressure_score }} / 财政 {{ report.fiscal_stress_score }}</div>
+    <a href="/reports/{{ report.id }}">查看</a>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>报告详情</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <nav class="nav">
+      <div class="brand">日本宏观政策效果监控器</div>
+      <div class="nav-links">
+        <a href="index.html">最新报告</a>
+        <a href="reports.html">历史报告</a>
+        <a href="sources.html">数据源状态</a>
+      </div>
+    </nav>
+  </header>
+  <main class="shell">
+    <section class="hero">
+      <p class="eyebrow">报告详情 · 2026-05-08</p>
+      <h1>日本宏观政策效果监控报告</h1>
+      <p><span class="label">保守研究判断</span></p>
+    </section>
+    <section class="grid grid-2">
+      <article class="panel report-body">
+        <h2>1. 总结判断</h2>
+        <p>当前数据更支持“名义增长成分偏高”的解释，真实增长证据尚不充分。实际 GDP 有改善迹象，但实际工资和消费尚未形成稳定改善链条。</p>
+        <h2>2. GDP 分析</h2>
+        <p>名义 GDP 是未扣除价格上涨的经济总量，实际 GDP 是扣除价格因素后的产出。两者差距扩大时，需要警惕增长主要来自价格上涨。</p>
+        <h2>3. 工资与消费</h2>
+        <p>实际工资代表扣除通胀后的购买力。如果实际工资仍为负，居民消费恢复通常缺少坚实基础。</p>
+      </article>
+      <aside class="panel">
+        <h2>数据源状态</h2>
+        <table class="dashboard">
+          <tbody>
+            <tr><td>ESRI GDP</td><td class="status-ok">成功</td></tr>
+            <tr><td>e-Stat CPI</td><td class="status-ok">成功</td></tr>
+            <tr><td>工资数据</td><td class="status-warn">部分成功</td></tr>
+            <tr><td>USDJPY</td><td class="status-warn">短期数据</td></tr>
+          </tbody>
+        </table>
+        <p class="muted">完整错误信息只写入服务器日志，公开页面仅显示摘要。</p>
+      </aside>
+    </section>
+    <section class="section">
+      <h2>图表</h2>
+      <div class="grid grid-2">
+        <div class="chart-placeholder">名义 GDP YoY vs 实际 GDP YoY</div>
+        <div class="chart-placeholder">实际工资 YoY vs CPI YoY</div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

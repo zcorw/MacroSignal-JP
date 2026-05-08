@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}最新报告{% endblock %}
+{% block content %}
+{% if not bundle %}
+<section class="empty">
+  <h1>暂无报告数据</h1>
+  <p>请先执行 <code>docker compose run --rm app python run.py --mode sample</code> 生成样例数据，或执行真实数据管道。</p>
+</section>
+{% else %}
+<section class="hero">
+  <p class="eyebrow">最新报告 · {{ bundle.report.report_date }}</p>
+  <h1>{{ bundle.report.summary_label }}</h1>
+  <p class="summary">{{ bundle.report.summary_text }}</p>
+  <p><span class="label">置信度：{{ bundle.scores.confidence_level }}</span></p>
+</section>
+<section class="grid grid-3 section">
+  <div class="panel score-panel"><h2>真实增长</h2><div class="score-value">{{ "%.0f"|format(bundle.scores.real_growth_score) }}</div></div>
+  <div class="panel score-panel"><h2>通胀压力</h2><div class="score-value">{{ "%.0f"|format(bundle.scores.inflation_pressure_score) }}</div></div>
+  <div class="panel score-panel"><h2>财政压力</h2><div class="score-value">{{ "%.0f"|format(bundle.scores.fiscal_stress_score) }}</div></div>
+</section>
+<section class="grid grid-2 section">
+  <div class="panel">
+    <h2>关键证据</h2>
+    <ul class="evidence">
+      {% for item in bundle.evidence %}
+      <li>{{ item.text }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="panel">
+    <h2>核心仪表盘</h2>
+    <table class="dashboard">
+      <thead><tr><th>指标</th><th>最新值</th><th>判断</th></tr></thead>
+      <tbody>
+        {% for metric in bundle.metrics %}
+        <tr><td>{{ metric.metric_key }}</td><td>{{ metric.latest_value }}</td><td>{{ metric.judgement }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="section">
+  <h2>核心图表</h2>
+  <div class="grid grid-2">
+    <div class="chart" data-chart="gdp_growth"></div>
+    <div class="chart" data-chart="wage_vs_cpi"></div>
+    <div class="chart" data-chart="private_consumption"></div>
+    <div class="chart" data-chart="market_pressure"></div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', path='charts.js') }}"></script>
+{% endblock %}

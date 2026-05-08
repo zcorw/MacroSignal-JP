@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据源状态</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <nav class="nav">
+      <div class="brand">日本宏观政策效果监控器</div>
+      <div class="nav-links">
+        <a href="index.html">最新报告</a>
+        <a href="reports.html">历史报告</a>
+        <a href="sources.html">数据源状态</a>
+      </div>
+    </nav>
+  </header>
+  <main class="shell">
+    <section class="hero">
+      <p class="eyebrow">最近运行 · 2026-05-08 11:05 JST</p>
+      <h1>数据源状态</h1>
+      <p class="summary">公开页面只展示可读摘要，不暴露服务器路径、密钥或异常堆栈。</p>
+    </section>
+    <section class="panel">
+      <table class="dashboard">
+        <thead>
+          <tr><th>数据源</th><th>最新数据日期</th><th>最近下载</th><th>状态</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ESRI GDP</td><td>2026Q1</td><td>2026-05-08 10:31</td><td class="status-ok">成功</td><td>CSV 已更新</td></tr>
+          <tr><td>e-Stat CPI</td><td>2026-03</td><td>2026-05-08 10:32</td><td class="status-ok">成功</td><td>Excel 已更新</td></tr>
+          <tr><td>e-Stat 工资</td><td>2026-03</td><td>2026-05-08 10:34</td><td class="status-warn">部分成功</td><td>实际工资表已下载，名义工资待复核</td></tr>
+          <tr><td>MOF JGB</td><td>2026-05-07</td><td>2026-05-08 10:35</td><td class="status-ok">成功</td><td>历史 CSV 已更新</td></tr>
+          <tr><td>BOJ / USDJPY</td><td>近 70 个营业日</td><td>2026-05-08 10:36</td><td class="status-warn">短期数据</td><td>长期序列接口待确认</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

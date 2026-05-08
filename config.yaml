@@ -1,0 +1,26 @@
+paths:
+  raw_dir: data/raw
+  manual_dir: data/manual
+  processed_dir: data/processed
+  database: data/app.db
+  logs_dir: logs
+
+download:
+  timeout_seconds: 60
+  retries: 2
+  user_agent: MacroSignal-JP/0.1
+
+features:
+  export_markdown: true
+  use_manual_usdjpy: true
+
+scoring:
+  thresholds:
+    jgb_10y_change_3m_bp: 50
+    jgb_30y_change_3m_bp: 75
+    usdjpy_change_3m_pct: 5
+    nominal_real_gdp_gap_pct: 2
+
+web:
+  title: 日本宏观政策效果监控器
+  public_readonly: true
