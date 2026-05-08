@@ -2,6 +2,7 @@ pandas>=2.2
 requests>=2.31
 beautifulsoup4>=4.12
 openpyxl>=3.1
+xlrd>=2.0
 pyyaml>=6.0
 fastapi>=0.111
 uvicorn[standard]>=0.30

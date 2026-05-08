@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, insert
+from sqlalchemy import delete, insert, update
+from sqlalchemy.engine import Engine
 
+from src.analyze import analyze
+from src.clean_data import Observation, clean_downloaded_files
 from src.config import AppConfig
+from src.fetch_data import DownloadedFile, download_all
+from src.indicators import calculate_indicators
+from src.report import to_report_payload
 from src.storage import (
     get_engine,
     init_db,
@@ -27,140 +34,99 @@ def run_pipeline(config: AppConfig, mode: str = "normal", retry_missing: bool = 
     init_db(config.paths.database)
     engine = get_engine(config.paths.database)
     started_at = now_iso()
+    trigger = "sample" if mode == "sample" else "cron"
     logger.info("开始运行数据管道 mode=%s retry_missing=%s", mode, retry_missing)
 
     with engine.begin() as conn:
         run_id = conn.execute(
-            insert(runs).values(started_at=started_at, status="success", trigger="manual" if mode == "sample" else "cron", message="")
+            insert(runs).values(started_at=started_at, status="running", trigger=trigger, message="")
         ).inserted_primary_key[0]
 
-    if mode == "sample":
-        load_sample_dataset(engine, int(run_id))
-    else:
-        # Starter package 先写入结构化失败状态，真实下载模块在后续迭代补齐。
+    try:
+        if mode == "sample":
+            download_results = [DownloadedFile("sample", "success", None, "2024-09", "写入内置样例数据")]
+            raw_observations = sample_observations()
+        else:
+            download_results = download_all(config)
+            raw_observations = clean_downloaded_files(config.paths.raw_dir, config.paths.manual_dir)
+
+        all_observations = calculate_indicators(raw_observations)
+        result = analyze(all_observations)
+        payload = to_report_payload(result)
+        persist_run(engine, int(run_id), all_observations, result.metrics, download_results)
+        replace_report(engine, payload)
+
         with engine.begin() as conn:
             conn.execute(
-                insert(source_status).values(
-                    run_id=run_id,
-                    source_name="real_download_pipeline",
-                    status="partial_success",
-                    latest_data_date=None,
-                    downloaded_at=now_iso(),
-                    raw_path=None,
-                    message="Starter package 已就绪；真实下载清洗模块待逐数据源实现。",
+                update(runs)
+                .where(runs.c.id == run_id)
+                .values(
+                    finished_at=now_iso(),
+                    status="success",
+                    message=f"完成：{len(raw_observations)} 条原始观测，{len(all_observations)} 条含派生指标观测。",
                 )
             )
-    logger.info("数据管道运行完成")
+        logger.info("数据管道运行完成")
+    except Exception as exc:
+        logger.exception("数据管道运行失败")
+        with engine.begin() as conn:
+            conn.execute(
+                update(runs)
+                .where(runs.c.id == run_id)
+                .values(finished_at=now_iso(), status="failed", message=str(exc))
+            )
+        raise
 
 
-def load_sample_dataset(engine, run_id: int) -> None:
+def persist_run(
+    engine: Engine,
+    run_id: int,
+    observations: list[Observation],
+    metrics: list[dict],
+    download_results: list[DownloadedFile],
+) -> None:
     created_at = now_iso()
-    observations = [
-        ("nominal_gdp_yoy", "2024-03-31", "2024Q1", "quarterly", 3.1, "%"),
-        ("nominal_gdp_yoy", "2024-06-30", "2024Q2", "quarterly", 3.4, "%"),
-        ("nominal_gdp_yoy", "2024-09-30", "2024Q3", "quarterly", 3.0, "%"),
-        ("real_gdp_yoy", "2024-03-31", "2024Q1", "quarterly", 0.8, "%"),
-        ("real_gdp_yoy", "2024-06-30", "2024Q2", "quarterly", 1.0, "%"),
-        ("real_gdp_yoy", "2024-09-30", "2024Q3", "quarterly", 0.7, "%"),
-        ("real_wage_yoy", "2024-07-31", "2024-07", "monthly", -1.0, "%"),
-        ("real_wage_yoy", "2024-08-31", "2024-08", "monthly", -0.8, "%"),
-        ("real_wage_yoy", "2024-09-30", "2024-09", "monthly", -0.6, "%"),
-        ("cpi_yoy", "2024-07-31", "2024-07", "monthly", 2.8, "%"),
-        ("cpi_yoy", "2024-08-31", "2024-08", "monthly", 2.7, "%"),
-        ("cpi_yoy", "2024-09-30", "2024-09", "monthly", 2.6, "%"),
-        ("real_consumption_yoy", "2024-03-31", "2024Q1", "quarterly", -0.3, "%"),
-        ("real_consumption_yoy", "2024-06-30", "2024Q2", "quarterly", 0.2, "%"),
-        ("real_consumption_yoy", "2024-09-30", "2024Q3", "quarterly", 0.4, "%"),
-        ("private_investment_yoy", "2024-03-31", "2024Q1", "quarterly", 0.5, "%"),
-        ("private_investment_yoy", "2024-06-30", "2024Q2", "quarterly", 0.9, "%"),
-        ("private_investment_yoy", "2024-09-30", "2024Q3", "quarterly", 0.6, "%"),
-        ("usdjpy", "2024-07-31", "2024-07", "monthly", 152.1, "JPY/USD"),
-        ("usdjpy", "2024-08-31", "2024-08", "monthly", 154.3, "JPY/USD"),
-        ("usdjpy", "2024-09-30", "2024-09", "monthly", 155.8, "JPY/USD"),
-        ("jgb_10y", "2024-07-31", "2024-07", "monthly", 1.05, "%"),
-        ("jgb_10y", "2024-08-31", "2024-08", "monthly", 1.16, "%"),
-        ("jgb_10y", "2024-09-30", "2024-09", "monthly", 1.21, "%"),
-    ]
-    metrics = [
-        ("2026-05-08", "real_gdp_yoy", 0.7, 1.0, 0.7, None, "偏弱改善"),
-        ("2026-05-08", "nominal_gdp_yoy", 3.0, 3.4, 3.0, None, "名义增长偏高"),
-        ("2026-05-08", "real_wage_yoy", -0.6, -0.8, -0.6, None, "仍承压"),
-        ("2026-05-08", "cpi_yoy", 2.6, 2.7, 2.6, None, "仍偏高"),
-        ("2026-05-08", "wage_minus_cpi", -3.2, -3.5, None, None, "购买力承压"),
-        ("2026-05-08", "jgb_10y_change_3m", 16.0, None, None, 16.0, "未触发压力阈值"),
-    ]
-    report_payload = {
-        "report_date": "2026-05-08",
-        "report": {
-            "report_date": "2026-05-08",
-            "title": "日本宏观政策效果监控报告",
-            "summary_label": "名义增长成分偏高",
-            "summary_text": "当前数据更支持名义增长成分偏高的解释，真实增长证据仍需继续观察。实际工资尚未稳定转正，居民购买力改善证据不足。",
-            "created_at": created_at,
-            "data_coverage": "样例数据：GDP 2024Q3，CPI/工资 2024-09，JGB/USDJPY 2024-09",
-            "has_missing_data": True,
-            "exported_markdown_path": None,
-        },
-        "scores": {
-            "real_growth_score": 46,
-            "inflation_pressure_score": 68,
-            "fiscal_stress_score": 54,
-            "confidence_level": "中",
-        },
-        "sections": [
-            {"section_key": "summary", "title": "总结判断", "body": "当前更像名义增长成分偏高，实际增长证据还不够强。", "sort_order": 1},
-            {"section_key": "gdp", "title": "GDP 分析", "body": "名义 GDP 与实际 GDP 的差距提示价格因素贡献较多。", "sort_order": 2},
-            {"section_key": "wage", "title": "工资与消费", "body": "实际工资仍为负，说明居民购买力仍承压。", "sort_order": 3},
-        ],
-        "evidence": [
-            {"category": "inflation", "text": "名义 GDP 增速高于实际 GDP，通胀贡献偏高。", "metric_key": "nominal_gdp_yoy", "severity": "warning", "sort_order": 1},
-            {"category": "real_growth", "text": "实际工资仍未稳定转正。", "metric_key": "real_wage_yoy", "severity": "warning", "sort_order": 2},
-            {"category": "fiscal", "text": "JGB 10Y 三个月变化未触发明显压力阈值。", "metric_key": "jgb_10y_change_3m", "severity": "info", "sort_order": 3},
-        ],
-    }
-
     with engine.begin() as conn:
         conn.execute(delete(series_observations))
         conn.execute(delete(metric_snapshots))
-        for row in observations:
-            conn.execute(
-                insert(series_observations).values(
-                    series_key=row[0],
-                    date=row[1],
-                    period_label=row[2],
-                    frequency=row[3],
-                    value=row[4],
-                    unit=row[5],
-                    source_name="sample",
-                    source_file="sample",
-                    released_at="2026-05-08",
-                    created_at=created_at,
-                )
-            )
-        for row in metrics:
-            conn.execute(
-                insert(metric_snapshots).values(
-                    snapshot_date=row[0],
-                    metric_key=row[1],
-                    latest_value=row[2],
-                    previous_value=row[3],
-                    yoy=row[4],
-                    change_3m=row[5],
-                    judgement=row[6],
-                    source_coverage="sample",
-                    created_at=created_at,
-                )
-            )
-        for source_name in ["ESRI GDP", "e-Stat CPI", "e-Stat Monthly Labour Survey", "MOF JGB", "BOJ / USDJPY"]:
+        for item in observations:
+            row = asdict(item)
+            row["created_at"] = created_at
+            conn.execute(insert(series_observations).values(**row).prefix_with("OR REPLACE"))
+        for metric in metrics:
+            conn.execute(insert(metric_snapshots).values(**metric, created_at=created_at).prefix_with("OR REPLACE"))
+        for item in download_results:
             conn.execute(
                 insert(source_status).values(
                     run_id=run_id,
-                    source_name=source_name,
-                    status="success" if source_name != "BOJ / USDJPY" else "partial_success",
-                    latest_data_date="2024-09",
+                    source_name=item.source_name,
+                    status=item.status,
+                    latest_data_date=item.latest_data_date,
                     downloaded_at=created_at,
-                    raw_path="sample",
-                    message="样例数据已写入。" if source_name != "BOJ / USDJPY" else "样例短期数据；长期序列可用手动 CSV 兜底。",
+                    raw_path=str(item.path) if item.path else None,
+                    message=item.message,
                 )
             )
-    replace_report(engine, report_payload)
+
+
+def sample_observations() -> list[Observation]:
+    return [
+        Observation("nominal_gdp", "2023-09-30", "2023Q3", "quarterly", 565000, "billions_jpy", "sample", "sample"),
+        Observation("nominal_gdp", "2024-09-30", "2024Q3", "quarterly", 582000, "billions_jpy", "sample", "sample"),
+        Observation("real_gdp", "2023-09-30", "2023Q3", "quarterly", 548000, "billions_chained_jpy", "sample", "sample"),
+        Observation("real_gdp", "2024-09-30", "2024Q3", "quarterly", 552000, "billions_chained_jpy", "sample", "sample"),
+        Observation("gdp_deflator", "2023-09-30", "2023Q3", "quarterly", 103.1, "index", "sample", "sample"),
+        Observation("gdp_deflator", "2024-09-30", "2024Q3", "quarterly", 105.8, "index", "sample", "sample"),
+        Observation("real_private_consumption", "2023-09-30", "2023Q3", "quarterly", 290000, "billions_chained_jpy", "sample", "sample"),
+        Observation("real_private_consumption", "2024-09-30", "2024Q3", "quarterly", 291000, "billions_chained_jpy", "sample", "sample"),
+        Observation("real_private_investment", "2023-09-30", "2023Q3", "quarterly", 87000, "billions_chained_jpy", "sample", "sample"),
+        Observation("real_private_investment", "2024-09-30", "2024Q3", "quarterly", 88000, "billions_chained_jpy", "sample", "sample"),
+        Observation("real_wage_yoy", "2024-09-30", "2024-09", "monthly", -0.6, "%", "sample", "sample"),
+        Observation("cpi_yoy", "2024-09-30", "2024-09", "monthly", 2.6, "%", "sample", "sample"),
+        Observation("jgb_10y", "2024-06-30", "2024-06-30", "daily", 1.05, "%", "sample", "sample"),
+        Observation("jgb_10y", "2024-09-30", "2024-09-30", "daily", 1.21, "%", "sample", "sample"),
+        Observation("jgb_30y", "2024-06-30", "2024-06-30", "daily", 2.15, "%", "sample", "sample"),
+        Observation("jgb_30y", "2024-09-30", "2024-09-30", "daily", 2.30, "%", "sample", "sample"),
+        Observation("usdjpy", "2024-06-30", "2024-06-30", "daily", 152.1, "JPY/USD", "sample", "sample"),
+        Observation("usdjpy", "2024-09-30", "2024-09-30", "daily", 155.8, "JPY/USD", "sample", "sample"),
+    ]

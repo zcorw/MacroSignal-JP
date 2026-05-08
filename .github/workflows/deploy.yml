@@ -44,7 +44,8 @@ jobs:
 
             mkdir -p data/raw data/manual data/processed logs outputs
 
-            docker compose build
+            docker compose --profile batch build
             docker compose run --rm app python run.py --init-db
+            docker compose run --rm app python run.py
             docker compose up -d web
             docker compose ps

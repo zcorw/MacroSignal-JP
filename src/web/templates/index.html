@@ -4,7 +4,7 @@
 {% if not bundle %}
 <section class="empty">
   <h1>暂无报告数据</h1>
-  <p>请先执行 <code>docker compose run --rm app python run.py --mode sample</code> 生成样例数据，或执行真实数据管道。</p>
+  <p>请先执行 <code>docker compose run --rm app python run.py</code> 生成真实数据分析，或执行 <code>docker compose run --rm app python run.py --mode sample</code> 写入样例数据。</p>
 </section>
 {% else %}
 <section class="hero">
@@ -13,11 +13,25 @@
   <p class="summary">{{ bundle.report.summary_text }}</p>
   <p><span class="label">置信度：{{ bundle.scores.confidence_level }}</span></p>
 </section>
+
 <section class="grid grid-3 section">
-  <div class="panel score-panel"><h2>真实增长</h2><div class="score-value">{{ "%.0f"|format(bundle.scores.real_growth_score) }}</div></div>
-  <div class="panel score-panel"><h2>通胀压力</h2><div class="score-value">{{ "%.0f"|format(bundle.scores.inflation_pressure_score) }}</div></div>
-  <div class="panel score-panel"><h2>财政压力</h2><div class="score-value">{{ "%.0f"|format(bundle.scores.fiscal_stress_score) }}</div></div>
+  <div class="panel score-panel">
+    <h2><span class="term" tabindex="0" data-tip="真实增长指扣除物价上涨后，经济产出、工资、消费和投资是否真的改善。">真实增长</span></h2>
+    <div class="score-value">{{ "%.0f"|format(bundle.scores.real_growth_score) }}</div>
+    <p class="hint">越高代表实际产出和购买力改善证据越强。</p>
+  </div>
+  <div class="panel score-panel">
+    <h2><span class="term" tabindex="0" data-tip="通胀压力指价格上涨对名义 GDP、居民成本和政策判断的影响。">通胀压力</span></h2>
+    <div class="score-value">{{ "%.0f"|format(bundle.scores.inflation_pressure_score) }}</div>
+    <p class="hint">越高代表增长更可能被价格上涨放大。</p>
+  </div>
+  <div class="panel score-panel">
+    <h2><span class="term" tabindex="0" data-tip="财政压力主要看日本国债长端收益率是否快速上升。">财政压力</span></h2>
+    <div class="score-value">{{ "%.0f"|format(bundle.scores.fiscal_stress_score) }}</div>
+    <p class="hint">越高代表市场对财政或通胀风险要求更高补偿。</p>
+  </div>
 </section>
+
 <section class="grid grid-2 section">
   <div class="panel">
     <h2>关键证据</h2>
@@ -28,23 +42,47 @@
     </ul>
   </div>
   <div class="panel">
+    <h2>给新手看的速读</h2>
+    <dl class="glossary compact">
+      <dt>名义 GDP</dt><dd>账面 GDP，没扣除涨价影响。</dd>
+      <dt>实际 GDP</dt><dd>扣除物价影响后的 GDP，更接近“真实产出”。</dd>
+      <dt>GDP 平减指数</dt><dd>GDP 里的整体价格指标，越高说明名义增长中价格贡献越大。</dd>
+      <dt>CPI</dt><dd>居民消费价格，反映日常生活成本。</dd>
+      <dt>实际工资</dt><dd>扣除通胀后的工资，衡量购买力。</dd>
+      <dt>JGB</dt><dd>日本国债。长期收益率快速上升时，要警惕财政信任压力。</dd>
+    </dl>
+  </div>
+</section>
+
+<section class="section">
+  <div class="panel">
     <h2>核心仪表盘</h2>
     <table class="dashboard">
-      <thead><tr><th>指标</th><th>最新值</th><th>判断</th></tr></thead>
+      <thead><tr><th>指标</th><th>最新值</th><th>数据期</th><th>判断</th></tr></thead>
       <tbody>
         {% for metric in bundle.metrics %}
-        <tr><td>{{ metric.metric_key }}</td><td>{{ metric.latest_value }}</td><td>{{ metric.judgement }}</td></tr>
+        <tr>
+          <td>
+            <span class="metric-name">{{ metric.metric_key|metric_label }}</span>
+            <span class="term term-inline" tabindex="0" data-tip="{{ metric.metric_key|metric_help }}">?</span>
+          </td>
+          <td>{{ metric.latest_value|format_number }}</td>
+          <td>{{ metric.source_coverage or "-" }}</td>
+          <td>{{ metric.judgement }}</td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </section>
+
 <section class="section">
   <h2>核心图表</h2>
   <div class="grid grid-2">
     <div class="chart" data-chart="gdp_growth"></div>
     <div class="chart" data-chart="wage_vs_cpi"></div>
     <div class="chart" data-chart="private_consumption"></div>
+    <div class="chart" data-chart="private_investment"></div>
     <div class="chart" data-chart="market_pressure"></div>
   </div>
 </section>

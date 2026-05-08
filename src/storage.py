@@ -6,7 +6,6 @@ from typing import Any
 from sqlalchemy import (
     Boolean,
     Column,
-    DateTime,
     Float,
     ForeignKey,
     Integer,
@@ -171,11 +170,11 @@ def init_db(db_path: Path | str) -> None:
 
 def seed_chart_definitions(engine: Engine) -> None:
     definitions = [
-        ("gdp_growth", "名义 GDP YoY vs 实际 GDP YoY", "比较名义增长和实际增长。", "10y", "line", 1),
+        ("gdp_growth", "名义 GDP YoY vs 实际 GDP YoY", "比较名义增长和扣除价格后的真实增长。", "10y", "line", 1),
         ("wage_vs_cpi", "实际工资 YoY vs CPI YoY", "观察工资购买力是否改善。", "10y", "line", 2),
         ("private_consumption", "民间消费 YoY", "观察居民消费恢复情况。", "10y", "line", 3),
-        ("private_investment", "企业设备投资 YoY", "观察企业投资意愿。", "10y", "line", 4),
-        ("market_pressure", "USDJPY 与 JGB 10Y", "观察弱日元和长端利率压力。", "5y", "dual_axis_line", 5),
+        ("private_investment", "企业设备投资 YoY", "观察企业设备投资意愿。", "10y", "line", 4),
+        ("market_pressure", "USDJPY 与 JGB 10Y", "观察弱日元和长期利率压力。", "5y", "dual_axis_line", 5),
     ]
     series = [
         ("gdp_growth", "nominal_gdp_yoy", "名义 GDP YoY", "%", "left", 1),
@@ -199,12 +198,12 @@ def seed_chart_definitions(engine: Engine) -> None:
                     chart_type=row[4],
                     sort_order=row[5],
                 )
-                .prefix_with("OR IGNORE")
+                .prefix_with("OR REPLACE")
             )
+        conn.execute(delete(chart_series))
         for row in series:
             conn.execute(
-                insert(chart_series)
-                .values(
+                insert(chart_series).values(
                     chart_key=row[0],
                     series_key=row[1],
                     display_name=row[2],
@@ -212,7 +211,6 @@ def seed_chart_definitions(engine: Engine) -> None:
                     axis=row[4],
                     sort_order=row[5],
                 )
-                .prefix_with("OR IGNORE")
             )
 
 
@@ -308,23 +306,31 @@ def chart_payload(engine: Engine, chart_key: str) -> dict[str, Any] | None:
         configured = conn.execute(
             select(chart_series).where(chart_series.c.chart_key == chart_key).order_by(chart_series.c.sort_order)
         ).mappings().all()
-        labels: list[str] = []
-        series_payload: list[dict[str, Any]] = []
+        label_by_date: dict[str, str] = {}
+        values_by_series: list[tuple[dict[str, Any], dict[str, float | None]]] = []
         for item in configured:
             rows = conn.execute(
                 select(series_observations.c.period_label, series_observations.c.date, series_observations.c.value)
                 .where(series_observations.c.series_key == item["series_key"])
                 .order_by(series_observations.c.date)
             ).mappings().all()
-            row_labels = [str(row["period_label"] or row["date"]) for row in rows]
-            if len(row_labels) > len(labels):
-                labels = row_labels
+            series_values: dict[str, float | None] = {}
+            for row in rows:
+                date_key = str(row["date"])
+                label_by_date[date_key] = str(row["period_label"] or row["date"])
+                series_values[date_key] = row["value"]
+            values_by_series.append((dict(item), series_values))
+
+        dates = sorted(label_by_date)
+        labels = [label_by_date[date_key] for date_key in dates]
+        series_payload = []
+        for item, series_values in values_by_series:
             series_payload.append(
                 {
                     "name": item["display_name"],
                     "axis": item["axis"],
                     "unit": item["unit"],
-                    "data": [row["value"] for row in rows],
+                    "data": [series_values.get(date_key) for date_key in dates],
                 }
             )
         return {
