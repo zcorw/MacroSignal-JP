@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import re
-import shutil
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -19,6 +19,8 @@ ESTAT_GDP = "https://www.e-stat.go.jp/en/stat-search/file-download?statInfId=000
 ESTAT_CPI_LATEST = "https://www.e-stat.go.jp/en/stat-search/file-download?statInfId=000040444343&fileKind=4"
 ESTAT_REAL_WAGE_LATEST = "https://www.e-stat.go.jp/stat-search/file-download?statInfId=000040277086&fileKind=4"
 MOF_JGB_HISTORICAL = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/historical/jgbcme_all.csv"
+FX_ENDPOINT_TEMPLATE = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{version}/v1/currencies/usd.json"
+FX_SOURCE = "fawazahmed0/currency-api"
 
 
 @dataclass(frozen=True)
@@ -42,7 +44,9 @@ def download_all(config: AppConfig) -> list[DownloadedFile]:
     results.append(download_file(session, ESTAT_CPI_LATEST, raw_dir / "estat_cpi_latest.xlsx", "e-Stat CPI", config))
     results.append(download_file(session, ESTAT_REAL_WAGE_LATEST, raw_dir / "estat_real_wage_latest.xlsx", "e-Stat Real Wage", config))
     results.append(download_file(session, MOF_JGB_HISTORICAL, raw_dir / "mof_jgb_historical.csv", "MOF JGB", config))
-    results.append(copy_manual_usdjpy(config))
+    results.append(download_usdjpy(session, raw_dir / "fx_usdjpy.csv", config))
+    if not (raw_dir / "fx_usdjpy.csv").exists():
+        results.append(check_manual_usdjpy(config))
     return results
 
 
@@ -103,17 +107,65 @@ def download_esri_gdp(session: requests.Session, raw_dir: Path, config: AppConfi
         return [DownloadedFile("ESRI GDP", "failed", None, None, f"下载失败：{exc}")]
 
 
-def copy_manual_usdjpy(config: AppConfig) -> DownloadedFile:
+def download_usdjpy(session: requests.Session, path: Path, config: AppConfig) -> DownloadedFile:
+    today = date.today()
+    candidate_dates = [today - timedelta(days=offset) for offset in range(180, -1, -7)]
+    rows: list[tuple[str, float]] = []
+    errors = 0
+
+    for day in candidate_dates:
+        result = fetch_usdjpy_for_version(session, day.isoformat(), config)
+        if result is None:
+            errors += 1
+            continue
+        rows.append(result)
+
+    latest = fetch_usdjpy_for_version(session, "latest", config)
+    if latest is not None and all(row[0] != latest[0] for row in rows):
+        rows.append(latest)
+
+    rows = sorted({row[0]: row for row in rows}.values(), key=lambda item: item[0])
+    if len(rows) < 2:
+        return DownloadedFile(
+            "USDJPY FX API",
+            "failed",
+            None,
+            None,
+            f"自动汇率下载失败或数据不足，失败请求数：{errors}",
+        )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write("date,value,source,note\n")
+        for rate_date, value in rows:
+            handle.write(f"{rate_date},{value:.8f},{FX_SOURCE},USD to JPY from currency-api\n")
+    return DownloadedFile("USDJPY FX API", "success", path, rows[-1][0], f"下载 USDJPY 汇率 {len(rows)} 条")
+
+
+def fetch_usdjpy_for_version(session: requests.Session, version: str, config: AppConfig) -> tuple[str, float] | None:
+    url = FX_ENDPOINT_TEMPLATE.format(version=version)
+    try:
+        response = session.get(url, timeout=config.download.timeout_seconds)
+        response.raise_for_status()
+        payload = response.json()
+        rate_date = str(payload.get("date") or version)
+        rate = payload.get("usd", {}).get("jpy")
+        if rate is None:
+            return None
+        return rate_date, float(rate)
+    except Exception:
+        logger.debug("USDJPY 汇率下载跳过 version=%s", version, exc_info=True)
+        return None
+
+
+def check_manual_usdjpy(config: AppConfig) -> DownloadedFile:
     manual = config.paths.manual_dir / "usdjpy.csv"
-    raw_copy = config.paths.raw_dir / "manual_usdjpy.csv"
     if not manual.exists():
         return DownloadedFile(
             "Manual USDJPY",
             "partial_success",
             None,
             None,
-            "未提供 data/manual/usdjpy.csv，USDJPY 序列暂缺；页面和报告会降低相关结论权重。",
+            "自动 USDJPY 下载失败，且未提供 data/manual/usdjpy.csv；页面和报告会降低相关结论权重。",
         )
-    raw_copy.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(manual, raw_copy)
-    return DownloadedFile("Manual USDJPY", "success", raw_copy, None, "使用手动 USDJPY CSV")
+    return DownloadedFile("Manual USDJPY", "success", manual, None, "自动 USDJPY 下载失败，使用手动 USDJPY CSV")

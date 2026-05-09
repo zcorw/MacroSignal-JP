@@ -66,9 +66,9 @@ tail -n 100 logs/app.log
 - e-Stat Consumer Price Index：自动下载 CPI 最新 Excel。
 - e-Stat Monthly Labour Survey：自动下载实际工资最新 Excel。
 - MOF JGB historical yield：自动下载国债收益率 CSV。
-- USDJPY：当前采用 `data/manual/usdjpy.csv` 手动兜底；缺失时系统会继续运行并降低相关判断权重。
+- USDJPY：自动拉取最近约 6 个月 USD->JPY 序列，写入 `data/raw/fx_usdjpy.csv`；自动源失败时再使用 `data/manual/usdjpy.csv` 兜底。
 
-USDJPY 手动文件格式：
+USDJPY 手动兜底文件格式：
 
 ```csv
 date,value,source,note

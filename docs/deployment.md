@@ -134,9 +134,15 @@ VPS_APP_DIR    部署目录，默认 /opt/japan_macro_monitor
 VPS_BRANCH     部署分支，默认 main
 ```
 
-## 7. 手动 USDJPY 数据
+## 7. USDJPY 自动汇率与手动兜底
 
-若需要加入 USDJPY 历史序列，放置：
+系统默认会调用汇率接口自动拉取 USD->JPY 汇率，并写入：
+
+```bash
+data/raw/fx_usdjpy.csv
+```
+
+若自动汇率源暂时失败，可放置手动兜底文件：
 
 ```bash
 data/manual/usdjpy.csv
@@ -149,4 +155,4 @@ date,value,source,note
 2026-05-01,153.24,manual_boj_export,BOJ Time-Series Data Search manual export
 ```
 
-未提供该文件时，系统仍会完成 GDP、CPI、工资和 JGB 分析，但报告会降低弱日元相关判断权重。
+未提供手动文件时，系统仍会完成 GDP、CPI、工资和 JGB 分析；只有当自动源也失败时，报告才会降低弱日元相关判断权重。

@@ -28,7 +28,7 @@ def clean_downloaded_files(raw_dir: Path, manual_dir: Path) -> list[Observation]
     observations.extend(clean_cpi(raw_dir / "estat_cpi_latest.xlsx"))
     observations.extend(clean_real_wage(raw_dir / "estat_real_wage_latest.xlsx"))
     observations.extend(clean_jgb(raw_dir / "mof_jgb_historical.csv"))
-    observations.extend(clean_manual_usdjpy(manual_dir / "usdjpy.csv"))
+    observations.extend(clean_usdjpy(raw_dir / "fx_usdjpy.csv", manual_dir / "usdjpy.csv"))
     return observations
 
 
@@ -194,20 +194,21 @@ def clean_jgb(path: Path) -> list[Observation]:
     return out
 
 
-def clean_manual_usdjpy(path: Path) -> list[Observation]:
-    if not path.exists():
-        return []
-    df = pd.read_csv(path)
-    out: list[Observation] = []
-    for _, row in df.iterrows():
-        parsed_date = pd.to_datetime(row.get("date"), errors="coerce")
-        value = parse_float(row.get("value"))
-        if pd.isna(parsed_date) or value is None:
+def clean_usdjpy(auto_path: Path, manual_path: Path) -> list[Observation]:
+    rows: dict[str, Observation] = {}
+    for path, fallback_source in [(auto_path, "USDJPY FX API"), (manual_path, "manual_usdjpy")]:
+        if not path.exists():
             continue
-        date_str = parsed_date.date().isoformat()
-        source = str(row.get("source") or "manual_usdjpy")
-        out.append(Observation("usdjpy", date_str, date_str, "daily", value, "JPY/USD", source, str(path)))
-    return out
+        df = pd.read_csv(path)
+        for _, row in df.iterrows():
+            parsed_date = pd.to_datetime(row.get("date"), errors="coerce")
+            value = parse_float(row.get("value"))
+            if pd.isna(parsed_date) or value is None:
+                continue
+            date_str = parsed_date.date().isoformat()
+            source = str(row.get("source") or fallback_source)
+            rows[date_str] = Observation("usdjpy", date_str, date_str, "daily", value, "JPY/USD", source, str(path))
+    return [rows[key] for key in sorted(rows)]
 
 
 def parse_float(value: object) -> float | None:

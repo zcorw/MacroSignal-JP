@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import timedelta
 
 import pandas as pd
 
@@ -26,7 +27,7 @@ def calculate_indicators(observations: list[Observation]) -> list[Observation]:
 
     out.extend(change_observations(frame, "jgb_10y", "jgb_10y_change_3m", 63, multiplier=100.0, unit="bp"))
     out.extend(change_observations(frame, "jgb_30y", "jgb_30y_change_3m", 63, multiplier=100.0, unit="bp"))
-    out.extend(pct_change_observations(frame, "usdjpy", "usdjpy_change_3m", 63))
+    out.extend(time_window_pct_change_observations(frame, "usdjpy", "usdjpy_change_3m", days=90))
 
     # e-Stat 稳定下载到的是实际工资最新表；名义工资同比暂用“实际工资同比 + CPI 同比”保守近似。
     out.extend(estimated_nominal_wage_yoy(out))
@@ -71,6 +72,40 @@ def change_observations(frame: pd.DataFrame, source_key: str, target_key: str, p
         if pd.isna(value):
             continue
         out.append(Observation(target_key, row["date"], row["period_label"], row["frequency"], round(float(value), 3), unit, f"derived:{source_key}", row["source_file"], row.get("released_at")))
+    return out
+
+
+def time_window_pct_change_observations(frame: pd.DataFrame, source_key: str, target_key: str, days: int) -> list[Observation]:
+    subset = frame[frame["series_key"] == source_key].sort_values("date").copy()
+    if subset.empty:
+        return []
+    subset["parsed_date"] = pd.to_datetime(subset["date"], errors="coerce")
+    subset = subset.dropna(subset=["parsed_date"])
+    out: list[Observation] = []
+    for _, row in subset.iterrows():
+        target_date = row["parsed_date"] - timedelta(days=days)
+        history = subset[subset["parsed_date"] <= target_date]
+        if history.empty:
+            continue
+        base = history.iloc[-1]
+        current_value = float(row["value"])
+        base_value = float(base["value"])
+        if base_value == 0:
+            continue
+        pct = (current_value / base_value - 1.0) * 100.0
+        out.append(
+            Observation(
+                target_key,
+                row["date"],
+                row["period_label"],
+                row["frequency"],
+                round(float(pct), 3),
+                "%",
+                f"derived:{source_key}",
+                row["source_file"],
+                row.get("released_at"),
+            )
+        )
     return out
 
 
