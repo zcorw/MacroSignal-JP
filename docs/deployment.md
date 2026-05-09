@@ -29,6 +29,8 @@ sudo chown $USER:$USER /opt/japan_macro_monitor
 mkdir -p data/raw data/manual data/processed logs
 ```
 
+如果 `/opt/japan_macro_monitor` 已经存在但还不是 Git 仓库，自动部署会在该目录内执行 `git init`、绑定远端并拉取目标分支。不要把生产数据放在仓库会覆盖的同名源码文件路径下；运行数据应放在 `data/`、`logs/` 或 `outputs/`。
+
 ## 2. 构建镜像
 
 批处理服务 `app` 使用 Compose profile，构建时需要带上 `--profile batch`：
