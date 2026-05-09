@@ -33,8 +33,15 @@ jobs:
             BRANCH="${{ secrets.VPS_BRANCH || 'main' }}"
 
             if [ ! -d "$APP_DIR/.git" ]; then
-              sudo mkdir -p "$APP_DIR"
-              sudo chown "$USER":"$USER" "$APP_DIR"
+              if [ ! -d "$APP_DIR" ]; then
+                mkdir -p "$APP_DIR" || {
+                  echo "Cannot create $APP_DIR without sudo."
+                  echo "Please create it once on the VPS:"
+                  echo "  sudo mkdir -p $APP_DIR"
+                  echo "  sudo chown \$USER:\$USER $APP_DIR"
+                  exit 1
+                }
+              fi
               git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
             fi
 

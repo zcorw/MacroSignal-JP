@@ -16,6 +16,13 @@
 cd /opt/japan_macro_monitor
 ```
 
+如果目录还不存在，需要先在 VPS 上手动创建一次，并把目录所有者改成部署用户。GitHub Actions 的 SSH 会话不能交互输入 sudo 密码，所以这一步不要放到 Actions 里执行：
+
+```bash
+sudo mkdir -p /opt/japan_macro_monitor
+sudo chown $USER:$USER /opt/japan_macro_monitor
+```
+
 确保持久化目录存在：
 
 ```bash
