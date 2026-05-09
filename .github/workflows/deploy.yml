@@ -24,7 +24,6 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
-          script_stop: true
           script: |
             set -euo pipefail
 
@@ -42,7 +41,14 @@ jobs:
                   exit 1
                 }
               fi
-              git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+              if [ -z "$(find "$APP_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+                git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+              else
+                cd "$APP_DIR"
+                git init
+                git remote remove origin 2>/dev/null || true
+                git remote add origin "$REPO_URL"
+              fi
             fi
 
             cd "$APP_DIR"
