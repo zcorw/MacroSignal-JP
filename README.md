@@ -87,8 +87,10 @@ date,value,source,note
 
 ## 定期任务与部署
 
-VPS、cron、GitHub Actions、Nginx 的完整流程见：
+VPS 部署文档：
 
 ```text
 docs/deployment.md
+docs/deployment-manual.md
+docs/deployment-github-actions.md
 ```
