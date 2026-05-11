@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urljoin
 
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
@@ -18,6 +20,9 @@ ESRI_TOP = "https://www.esri.cao.go.jp/en/sna/sokuhou/sokuhou_top.html"
 ESTAT_GDP = "https://www.e-stat.go.jp/en/stat-search/file-download?statInfId=000040385257&fileKind=1"
 ESTAT_CPI_LATEST = "https://www.e-stat.go.jp/en/stat-search/file-download?statInfId=000040444343&fileKind=4"
 ESTAT_REAL_WAGE_LATEST = "https://www.e-stat.go.jp/stat-search/file-download?statInfId=000040277086&fileKind=4"
+ESTAT_GDP_SEARCH = "https://www.e-stat.go.jp/en/stat-search/files?layout=dataset&toukei=00100409&tstat=000001014470"
+ESTAT_CPI_SEARCH = "https://www.e-stat.go.jp/stat-search/files?layout=dataset&toukei=00200573&tstat=000001150147"
+ESTAT_REAL_WAGE_SEARCH = "https://www.e-stat.go.jp/stat-search/files?layout=dataset&toukei=00450071"
 MOF_JGB_HISTORICAL = "https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/historical/jgbcme_all.csv"
 FX_ENDPOINT_TEMPLATE = "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{version}/v1/currencies/usd.json"
 FX_SOURCE = "fawazahmed0/currency-api"
@@ -40,14 +45,151 @@ def download_all(config: AppConfig) -> list[DownloadedFile]:
 
     results: list[DownloadedFile] = []
     results.extend(download_esri_gdp(session, raw_dir, config))
-    results.append(download_file(session, ESTAT_GDP, raw_dir / "estat_gdp.csv", "e-Stat GDP", config))
-    results.append(download_file(session, ESTAT_CPI_LATEST, raw_dir / "estat_cpi_latest.xlsx", "e-Stat CPI", config))
-    results.append(download_file(session, ESTAT_REAL_WAGE_LATEST, raw_dir / "estat_real_wage_latest.xlsx", "e-Stat Real Wage", config))
+    results.append(
+        download_latest_estat_file(
+            session,
+            ESTAT_GDP_SEARCH,
+            raw_dir / "estat_gdp.csv",
+            "e-Stat GDP",
+            config,
+            file_kind="1",
+            fallback_url=ESTAT_GDP,
+        )
+    )
+    results.append(
+        download_latest_estat_file(
+            session,
+            ESTAT_CPI_SEARCH,
+            raw_dir / "estat_cpi_latest.xlsx",
+            "e-Stat CPI",
+            config,
+            file_kind="4",
+            fallback_url=ESTAT_CPI_LATEST,
+            validator=validate_cpi_file,
+        )
+    )
+    results.append(
+        download_latest_estat_file(
+            session,
+            ESTAT_REAL_WAGE_SEARCH,
+            raw_dir / "estat_real_wage_latest.xlsx",
+            "e-Stat Real Wage",
+            config,
+            file_kind="4",
+            fallback_url=ESTAT_REAL_WAGE_LATEST,
+            validator=validate_real_wage_file,
+            prefer_stat_ids=["000040277086"],
+        )
+    )
     results.append(download_file(session, MOF_JGB_HISTORICAL, raw_dir / "mof_jgb_historical.csv", "MOF JGB", config))
     results.append(download_usdjpy(session, raw_dir / "fx_usdjpy.csv", config))
     if not (raw_dir / "fx_usdjpy.csv").exists():
         results.append(check_manual_usdjpy(config))
     return results
+
+
+def download_latest_estat_file(
+    session: requests.Session,
+    search_url: str,
+    path: Path,
+    source_name: str,
+    config: AppConfig,
+    file_kind: str,
+    fallback_url: str,
+    validator=None,
+    prefer_stat_ids: list[str] | None = None,
+    max_candidates: int = 30,
+) -> DownloadedFile:
+    try:
+        candidates = discover_estat_download_urls(session, search_url, file_kind, config)
+        candidates = prioritize_estat_candidates(candidates, prefer_stat_ids or [])
+        logger.info("%s 动态发现候选下载链接 %d 个", source_name, len(candidates))
+        for url in candidates[:max_candidates]:
+            response = session.get(url, timeout=config.download.timeout_seconds)
+            response.raise_for_status()
+            if validator is not None and not validator(response.content):
+                logger.info("%s 跳过结构不匹配的候选：%s", source_name, url)
+                continue
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(response.content)
+            stat_id = extract_stat_id(url)
+            return DownloadedFile(source_name, "success", path, stat_id, f"动态发现并下载成功：{stat_id}")
+        logger.warning("%s 动态发现未找到可用候选，使用备用链接", source_name)
+    except Exception:
+        logger.exception("%s 动态发现失败，使用备用链接", source_name)
+    return download_file(session, fallback_url, path, source_name, config)
+
+
+def discover_estat_download_urls(
+    session: requests.Session,
+    search_url: str,
+    file_kind: str,
+    config: AppConfig,
+) -> list[str]:
+    response = session.get(search_url, timeout=config.download.timeout_seconds)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    urls: list[str] = []
+    seen: set[str] = set()
+    for anchor in soup.find_all("a", href=True):
+        href = anchor["href"]
+        if "file-download" not in href or f"fileKind={file_kind}" not in href:
+            continue
+        absolute = urljoin(search_url, href.replace("&amp;", "&"))
+        stat_id = extract_stat_id(absolute)
+        if not stat_id or stat_id in seen:
+            continue
+        seen.add(stat_id)
+        urls.append(absolute)
+    return urls
+
+
+def prioritize_estat_candidates(urls: list[str], preferred_ids: list[str]) -> list[str]:
+    preferred = []
+    remaining = []
+    for url in urls:
+        if extract_stat_id(url) in preferred_ids:
+            preferred.append(url)
+        else:
+            remaining.append(url)
+    remaining = sorted(remaining, key=lambda item: extract_stat_id(item) or "", reverse=True)
+    return preferred + remaining
+
+
+def extract_stat_id(url: str) -> str | None:
+    match = re.search(r"statInfId=(\d+)|stat_infid=(\d+)", url)
+    if not match:
+        return None
+    return next(group for group in match.groups() if group)
+
+
+def validate_cpi_file(content: bytes) -> bool:
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as handle:
+        handle.write(content)
+        temp_path = Path(handle.name)
+    try:
+        df = pd.read_excel(temp_path, header=None, nrows=30)
+        return df.shape[1] >= 11 and any(pd.to_numeric(df.iloc[:, 1], errors="coerce").dropna() > 190000)
+    except Exception:
+        return False
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def validate_real_wage_file(content: bytes) -> bool:
+    with tempfile.NamedTemporaryFile(suffix=".xls", delete=False) as handle:
+        handle.write(content)
+        temp_path = Path(handle.name)
+    try:
+        df = pd.read_excel(temp_path, header=None, nrows=20)
+        years = pd.to_numeric(df.iloc[:, 0], errors="coerce")
+        months = df.iloc[:, 1].astype(str)
+        yoy = pd.to_numeric(df.iloc[:, 3], errors="coerce") if df.shape[1] > 3 else pd.Series(dtype=float)
+        return bool(((years >= 1990) & months.str.match(r"^\d{1,2}$", na=False) & yoy.notna()).any())
+    except Exception:
+        return False
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def download_file(

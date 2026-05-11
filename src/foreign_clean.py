@@ -399,10 +399,10 @@ def clean_foreign_worker_metrics(source_dir: Path) -> list[ForeignWorkerMetric]:
 
 
 def clean_mhlw_foreign_worker_file(path: Path) -> list[ForeignWorkerMetric]:
-    period_date = "2024-10-31"
     source_name = "MHLW Foreign Workers"
     out: list[ForeignWorkerMetric] = []
     xls = pd.ExcelFile(path)
+    period_date = parse_mhlw_period(path, xls)
 
     if "別表４" in xls.sheet_names:
         industry = pd.read_excel(path, sheet_name="別表４", header=None)
@@ -455,10 +455,10 @@ def clean_foreign_wage_metrics(
 
 
 def clean_foreign_wage_file(path: Path, macro_observations: list[Observation]) -> list[ForeignWageMetric]:
-    period_date = "2024-12-31"
     source_name = "e-Stat Foreign Wages"
     out: list[ForeignWageMetric] = []
     df = pd.read_excel(path, sheet_name=0, header=None)
+    period_date = parse_foreign_wage_period(df)
     cpi_yoy = latest_macro_value(macro_observations, "cpi_yoy")
 
     current_group: str | None = None
@@ -493,6 +493,26 @@ def clean_foreign_wage_file(path: Path, macro_observations: list[Observation]) -
 
 def normalize_wage_label(value: str) -> str:
     return re.sub(r"\s+", "", value.replace("\u3000", " ").replace("\n", " ")).strip()
+
+
+def parse_mhlw_period(path: Path, xls: pd.ExcelFile) -> str:
+    for sheet_name in xls.sheet_names:
+        df = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=4)
+        text = " ".join(str(value) for value in df.fillna("").to_numpy().ravel())
+        match = re.search(r"令和(\d+)年10月末", text)
+        if match:
+            year = 2018 + int(match.group(1))
+            return date(year, 10, 31).isoformat()
+    return date.today().isoformat()
+
+
+def parse_foreign_wage_period(df: pd.DataFrame) -> str:
+    text = " ".join(str(value) for value in df.head(3).fillna("").to_numpy().ravel())
+    match = re.search(r"令和(\d+)年", text)
+    if match:
+        year = 2018 + int(match.group(1))
+        return date(year, 12, 31).isoformat()
+    return date.today().isoformat()
 
 
 def is_major_industry_label(label: str) -> bool:
