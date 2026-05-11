@@ -174,14 +174,17 @@ def persist_run(
     with engine.begin() as conn:
         conn.execute(delete(series_observations))
         conn.execute(delete(metric_snapshots))
-        conn.execute(delete(foreign_resident_observations))
+        # The detail table can contain hundreds of thousands of rows from older
+        # versions. Current UI/API uses aggregated metrics only, so do not touch
+        # this table during routine runs; deleting it on small VPS disks can
+        # create a large SQLite journal and fail with disk I/O errors.
         conn.execute(delete(foreign_resident_metrics))
         conn.execute(delete(foreign_worker_metrics))
         conn.execute(delete(foreign_wage_metrics))
         logger.info("开始序列化数据库写入行")
         observation_rows = [asdict(item) | {"created_at": created_at} for item in observations]
         metric_rows = [metric | {"created_at": created_at} for metric in metrics]
-        foreign_observation_rows = [asdict(item) | {"created_at": created_at} for item in foreign_observations]
+        foreign_observation_rows = []
         foreign_metric_rows = [asdict(item) | {"created_at": created_at} for item in foreign_metrics_items]
         foreign_worker_metric_rows = [asdict(item) | {"created_at": created_at} for item in foreign_worker_metrics_items]
         foreign_wage_metric_rows = [asdict(item) | {"created_at": created_at} for item in foreign_wage_metrics_items]
@@ -189,7 +192,8 @@ def persist_run(
 
         bulk_insert(conn, series_observations, observation_rows)
         bulk_insert(conn, metric_snapshots, metric_rows)
-        bulk_insert(conn, foreign_resident_observations, foreign_observation_rows)
+        if foreign_observation_rows:
+            bulk_insert(conn, foreign_resident_observations, foreign_observation_rows)
         bulk_insert(conn, foreign_resident_metrics, foreign_metric_rows)
         bulk_insert(conn, foreign_worker_metrics, foreign_worker_metric_rows)
         bulk_insert(conn, foreign_wage_metrics, foreign_wage_metric_rows)
