@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import calendar
+import logging
 import math
 import re
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from pathlib import Path
 import pandas as pd
 
 from src.clean_data import Observation
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -92,11 +95,21 @@ def clean_foreign_residents(
     files = sorted(source_dir.glob("estat_foreign_residents*.xlsx"))
     observations: list[ForeignResidentObservation] = []
     for path in files:
+        logger.info("开始清洗在留外国人明细文件：%s", path)
         observations.extend(clean_foreign_resident_file(path))
+        logger.info("在留外国人明细累计 %d 条", len(observations))
 
+    logger.info("开始计算在留外国人指标")
     metrics = calculate_foreign_resident_metrics(observations)
+    logger.info("在留外国人指标计算完成：%d 条", len(metrics))
+
+    logger.info("开始清洗外国人劳动者指标")
     worker_metrics = clean_foreign_worker_metrics(source_dir)
+    logger.info("外国人劳动者指标清洗完成：%d 条", len(worker_metrics))
+
+    logger.info("开始清洗外国人工资指标")
     wage_metrics = clean_foreign_wage_metrics(source_dir, macro_observations or [])
+    logger.info("外国人工资指标清洗完成：%d 条", len(wage_metrics))
     return observations, metrics, worker_metrics, wage_metrics
 
 
@@ -108,7 +121,9 @@ def clean_foreign_resident_file(path: Path) -> list[ForeignResidentObservation]:
 
     year, month = parse_period_from_sheet(detail_sheet)
     period_date = month_end(year, month)
-    df = pd.read_excel(path, sheet_name=detail_sheet, dtype=str)
+    columns = {"国籍・地域", "在留資格", "性別", "年齢（５歳階級）", "年齢", "都道府県", "在留外国人数"}
+    df = pd.read_excel(path, sheet_name=detail_sheet, dtype=str, usecols=lambda name: name in columns)
+    logger.info("读取在留外国人明细 sheet=%s：%d 行", detail_sheet, len(df))
 
     required = {"国籍・地域", "在留資格", "都道府県", "在留外国人数"}
     if not required.issubset(set(df.columns)):
@@ -378,6 +393,7 @@ def clean_foreign_worker_metrics(source_dir: Path) -> list[ForeignWorkerMetric]:
     files = sorted(source_dir.glob("mhlw_foreign_workers*.xlsx"))
     out: list[ForeignWorkerMetric] = []
     for path in files:
+        logger.info("清洗外国人雇用状况文件：%s", path)
         out.extend(clean_mhlw_foreign_worker_file(path))
     return out
 
@@ -433,6 +449,7 @@ def clean_foreign_wage_metrics(
     files = sorted(source_dir.glob("estat_foreign_wages*.xlsx"))
     out: list[ForeignWageMetric] = []
     for path in files:
+        logger.info("清洗外国人工资文件：%s", path)
         out.extend(clean_foreign_wage_file(path, macro_observations))
     return out
 

@@ -88,6 +88,19 @@ VPS_BRANCH     部署分支，默认 main
 
 `.github/workflows/deploy.yml` 会在 `main` 推送后执行：
 
+Workflow 的 SSH 配置已显式设置：
+
+```yaml
+timeout: 120s
+command_timeout: 60m
+```
+
+含义：
+
+- `timeout` 是建立 SSH 连接的等待时间。
+- `command_timeout` 是远端部署命令整体允许运行的时间。
+- 完整数据管道会下载官方数据、清洗在留外国人 44 万行明细并写入 SQLite，VPS 性能较弱时可能需要数分钟，所以不要使用默认短超时。
+
 1. SSH 登录 VPS。
 2. 准备 GitHub `known_hosts`。
 3. 如果部署目录为空，执行 `git clone`。

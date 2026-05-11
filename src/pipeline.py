@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import asdict
 from datetime import datetime, timezone
+from time import perf_counter
 
 from sqlalchemy import delete, insert, update
 from sqlalchemy.engine import Engine
@@ -63,20 +64,52 @@ def run_pipeline(config: AppConfig, mode: str = "normal", retry_missing: bool = 
             foreign_worker_metrics_items: list[ForeignWorkerMetric] = []
             foreign_wage_metrics_items: list[ForeignWageMetric] = []
         else:
+            stage_started = perf_counter()
+            logger.info("开始下载宏观数据")
             download_results = download_all(config)
-            download_results.extend(download_foreign_sources(config))
-            raw_observations = clean_downloaded_files(config.paths.raw_dir, config.paths.manual_dir)
+            logger.info("宏观数据下载完成，耗时 %.1f 秒", perf_counter() - stage_started)
 
+            stage_started = perf_counter()
+            logger.info("开始下载外国人专题数据")
+            download_results.extend(download_foreign_sources(config))
+            logger.info("外国人专题数据下载完成，耗时 %.1f 秒", perf_counter() - stage_started)
+
+            stage_started = perf_counter()
+            logger.info("开始清洗宏观数据")
+            raw_observations = clean_downloaded_files(config.paths.raw_dir, config.paths.manual_dir)
+            logger.info("宏观数据清洗完成：%d 条原始观测，耗时 %.1f 秒", len(raw_observations), perf_counter() - stage_started)
+
+        stage_started = perf_counter()
+        logger.info("开始计算宏观派生指标")
         all_observations = calculate_indicators(raw_observations)
+        logger.info("宏观派生指标计算完成：%d 条总观测，耗时 %.1f 秒", len(all_observations), perf_counter() - stage_started)
+
         if mode != "sample":
+            stage_started = perf_counter()
+            logger.info("开始清洗外国人专题数据；在留外国人明细文件较大，此步骤可能需要数分钟")
             (
                 foreign_observations,
                 foreign_metrics,
                 foreign_worker_metrics_items,
                 foreign_wage_metrics_items,
             ) = clean_foreign_residents(config.paths.raw_dir, all_observations)
+            logger.info(
+                "外国人专题数据清洗完成：在留明细 %d 条，在留指标 %d 条，劳动者指标 %d 条，工资指标 %d 条，耗时 %.1f 秒",
+                len(foreign_observations),
+                len(foreign_metrics),
+                len(foreign_worker_metrics_items),
+                len(foreign_wage_metrics_items),
+                perf_counter() - stage_started,
+            )
+
+        stage_started = perf_counter()
+        logger.info("开始生成宏观分析报告")
         result = analyze(all_observations)
         payload = to_report_payload(result)
+        logger.info("宏观分析报告生成完成，耗时 %.1f 秒", perf_counter() - stage_started)
+
+        stage_started = perf_counter()
+        logger.info("开始写入数据库")
         persist_run(
             engine,
             int(run_id),
@@ -89,6 +122,7 @@ def run_pipeline(config: AppConfig, mode: str = "normal", retry_missing: bool = 
             foreign_wage_metrics_items,
         )
         replace_report(engine, payload)
+        logger.info("数据库写入完成，耗时 %.1f 秒", perf_counter() - stage_started)
 
         with engine.begin() as conn:
             conn.execute(
@@ -128,6 +162,15 @@ def persist_run(
     foreign_metrics_items = foreign_metrics_items or []
     foreign_worker_metrics_items = foreign_worker_metrics_items or []
     foreign_wage_metrics_items = foreign_wage_metrics_items or []
+    logger.info(
+        "准备数据库批量写入：宏观观测 %d，宏观指标 %d，在留明细 %d，在留指标 %d，劳动者指标 %d，工资指标 %d",
+        len(observations),
+        len(metrics),
+        len(foreign_observations),
+        len(foreign_metrics_items),
+        len(foreign_worker_metrics_items),
+        len(foreign_wage_metrics_items),
+    )
     with engine.begin() as conn:
         conn.execute(delete(series_observations))
         conn.execute(delete(metric_snapshots))
@@ -135,12 +178,14 @@ def persist_run(
         conn.execute(delete(foreign_resident_metrics))
         conn.execute(delete(foreign_worker_metrics))
         conn.execute(delete(foreign_wage_metrics))
+        logger.info("开始序列化数据库写入行")
         observation_rows = [asdict(item) | {"created_at": created_at} for item in observations]
         metric_rows = [metric | {"created_at": created_at} for metric in metrics]
         foreign_observation_rows = [asdict(item) | {"created_at": created_at} for item in foreign_observations]
         foreign_metric_rows = [asdict(item) | {"created_at": created_at} for item in foreign_metrics_items]
         foreign_worker_metric_rows = [asdict(item) | {"created_at": created_at} for item in foreign_worker_metrics_items]
         foreign_wage_metric_rows = [asdict(item) | {"created_at": created_at} for item in foreign_wage_metrics_items]
+        logger.info("数据库写入行序列化完成")
 
         bulk_insert(conn, series_observations, observation_rows)
         bulk_insert(conn, metric_snapshots, metric_rows)
@@ -165,6 +210,7 @@ def persist_run(
 def bulk_insert(conn, table, rows: list[dict], chunk_size: int = 5000) -> None:
     if not rows:
         return
+    logger.info("写入表 %s：%d 行", table.name, len(rows))
     stmt = insert(table).prefix_with("OR REPLACE")
     for start in range(0, len(rows), chunk_size):
         conn.execute(stmt, rows[start : start + chunk_size])
