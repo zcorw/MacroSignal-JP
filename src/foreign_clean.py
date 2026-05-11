@@ -93,15 +93,11 @@ def clean_foreign_residents(
         return [], [], [], []
 
     files = sorted(source_dir.glob("estat_foreign_residents*.xlsx"))
-    observations: list[ForeignResidentObservation] = []
+    resident_metrics: list[ForeignResidentMetric] = []
     for path in files:
-        logger.info("开始清洗在留外国人明细文件：%s", path)
-        observations.extend(clean_foreign_resident_file(path))
-        logger.info("在留外国人明细累计 %d 条", len(observations))
-
-    logger.info("开始计算在留外国人指标")
-    metrics = calculate_foreign_resident_metrics(observations)
-    logger.info("在留外国人指标计算完成：%d 条", len(metrics))
+        logger.info("开始聚合清洗在留外国人文件：%s", path)
+        resident_metrics.extend(clean_foreign_resident_metrics_file(path))
+        logger.info("在留外国人指标累计 %d 条", len(resident_metrics))
 
     logger.info("开始清洗外国人劳动者指标")
     worker_metrics = clean_foreign_worker_metrics(source_dir)
@@ -110,7 +106,40 @@ def clean_foreign_residents(
     logger.info("开始清洗外国人工资指标")
     wage_metrics = clean_foreign_wage_metrics(source_dir, macro_observations or [])
     logger.info("外国人工资指标清洗完成：%d 条", len(wage_metrics))
-    return observations, metrics, worker_metrics, wage_metrics
+    return [], resident_metrics, worker_metrics, wage_metrics
+
+
+def clean_foreign_resident_metrics_file(path: Path) -> list[ForeignResidentMetric]:
+    xls = pd.ExcelFile(path)
+    detail_sheet = find_detail_sheet(xls.sheet_names)
+    if detail_sheet is None:
+        return []
+
+    year, month = parse_period_from_sheet(detail_sheet)
+    period_date = month_end(year, month)
+    columns = {"国籍・地域", "在留資格", "都道府県", "在留外国人数"}
+    df = pd.read_excel(path, sheet_name=detail_sheet, dtype=str, usecols=lambda name: name in columns)
+    logger.info("读取在留外国人聚合字段 sheet=%s：%d 行", detail_sheet, len(df))
+    required = {"国籍・地域", "在留資格", "都道府県", "在留外国人数"}
+    if not required.issubset(set(df.columns)):
+        return []
+
+    df = df.rename(
+        columns={
+            "国籍・地域": "nationality",
+            "在留資格": "residence_status",
+            "都道府県": "prefecture",
+            "在留外国人数": "value",
+        }
+    )
+    df["nationality"] = df["nationality"].map(lambda value: split_code_label(value)[1])
+    df["residence_status"] = df["residence_status"].map(lambda value: split_code_label(value)[1])
+    df["prefecture"] = df["prefecture"].map(lambda value: split_code_label(value)[1])
+    df["value"] = pd.to_numeric(df["value"].str.replace(",", "", regex=False), errors="coerce")
+    df = df.dropna(subset=["value"])
+    df["date"] = period_date
+    df["source_file"] = str(path)
+    return calculate_foreign_resident_metrics_from_frame(df)
 
 
 def clean_foreign_resident_file(path: Path) -> list[ForeignResidentObservation]:
@@ -223,6 +252,12 @@ def calculate_foreign_resident_metrics(
         return []
 
     frame = pd.DataFrame([item.__dict__ for item in observations])
+    return calculate_foreign_resident_metrics_from_frame(frame)
+
+
+def calculate_foreign_resident_metrics_from_frame(frame: pd.DataFrame) -> list[ForeignResidentMetric]:
+    if frame.empty:
+        return []
     metrics: list[ForeignResidentMetric] = []
     source_name = "e-Stat Foreign Residents"
 
