@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}外国人趋势{% endblock %}
+{% block content %}
+{% if not overview.available %}
+<section class="empty">
+  <h1>暂无外国人趋势数据</h1>
+  <p>请先执行 <code>docker compose run --rm app python run.py</code> 下载并清洗最新官方数据。</p>
+</section>
+{% else %}
+<section class="hero">
+  <p class="eyebrow">外国人趋势 · {{ overview.latest_date }}</p>
+  <h1>{{ overview.summary_label }}</h1>
+  <p class="summary">{{ overview.summary_text }}</p>
+  {% if overview.source_status %}
+  <p><span class="label">来源：{{ overview.source_status.source_name }}</span></p>
+  {% endif %}
+</section>
+
+<section class="grid grid-3 section">
+  <div class="panel score-panel">
+    <h2><span class="term" tabindex="0" data-tip="在留外国人指在日本持有合法在留资格并被统计的人，不等同于入境游客，也不等同于外国人劳动者。">在留外国人总数</span></h2>
+    <div class="score-value">{{ "{:,.0f}".format(overview.total.value) if overview.total else "-" }}</div>
+    <p class="hint">人数上升说明外国人口规模扩大，但需要结合国籍和在留资格结构判断性质。</p>
+  </div>
+  <div class="panel score-panel">
+    <h2><span class="term" tabindex="0" data-tip="长期定居型包括永住者、定住者、日本人配偶者等、永住者配偶者等。这个比例越高，越接近长期居住社会。">长期定居型占比</span></h2>
+    <div class="score-value">{{ "%.1f%%"|format(overview.long_term_share.value) if overview.long_term_share else "-" }}</div>
+    <p class="hint">该指标帮助区分“短期劳动力接收”和“长期定居型人口变化”。</p>
+  </div>
+  <div class="panel score-panel">
+    <h2><span class="term" tabindex="0" data-tip="最新一期数据只适合做结构判断；趋势、同比和 5 年变化需要多期历史数据。">数据置信度</span></h2>
+    <div class="score-value small-score">中</div>
+    <p class="hint">已接入官方明细数据；多期历史补齐后趋势判断会更可靠。</p>
+  </div>
+</section>
+
+<section class="grid grid-3 section">
+  <div class="panel score-panel">
+    <h2><span class="term" tabindex="0" data-tip="衡量永住者、定住者、配偶者等长期居住资格的占比。分数越高，越接近长期定居型社会。">定居化分数</span></h2>
+    <div class="score-value">{{ "%.0f"|format(overview.scores.settlement_score) }}</div>
+    <p class="hint">保守规则分数，主要看长期定居型在留资格占比。</p>
+  </div>
+  <div class="panel score-panel">
+    <h2><span class="term" tabindex="0" data-tip="衡量外国人劳动者是否集中在少数行业。越高代表少数行业对外国劳动力依赖越明显。">劳动依赖分数</span></h2>
+    <div class="score-value">{{ "%.0f"|format(overview.scores.labor_dependency_score) }}</div>
+    <p class="hint">当前用行业 Top 3 集中度估算，后续可结合行业总就业人数。</p>
+  </div>
+  <div class="panel score-panel">
+    <h2><span class="term" tabindex="0" data-tip="衡量外国人工资水平和购买力改善证据。当前只有年度工资水平，因此置信度有限。">工资改善分数</span></h2>
+    <div class="score-value">{{ "%.0f"|format(overview.scores.wage_improvement_score) }}</div>
+    <p class="hint">需要多期工资数据后，才能更严格判断真实改善。</p>
+  </div>
+</section>
+
+<section class="grid grid-2 section">
+  <div class="panel">
+    <h2>如何看这个专题</h2>
+    <dl class="glossary compact">
+      <dt>在留资格</dt><dd>外国人在日本停留、工作、学习或定居的法律身份，比如技能实习、特定技能、永住者。</dd>
+      <dt>技能实习</dt><dd>偏临时劳动力和技能转移口径，长期看占比过高通常不代表稳定定居。</dd>
+      <dt>特定技能</dt><dd>面向劳动力短缺行业的正式工作资格，占比上升说明日本更制度化地接收外国劳动者。</dd>
+      <dt>永住者/定住者</dt><dd>更接近长期居住和生活基础，比例上升通常意味着外国人口社会属性增强。</dd>
+    </dl>
+  </div>
+  <div class="panel">
+    <h2>证据列表</h2>
+    <ul class="evidence">
+      {% for item in overview.evidence %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<section class="section">
+  <h2>核心图表</h2>
+  <div class="grid grid-2">
+    <div class="chart-card">
+      <a class="chart-link" href="/foreign-residents/charts/foreign_residents_total">查看表格</a>
+      <div class="chart" data-chart="foreign_residents_total" data-api="/api/foreign-residents/charts"></div>
+    </div>
+    <div class="chart-card">
+      <a class="chart-link" href="/foreign-residents/charts/foreign_residents_by_nationality">查看表格</a>
+      <div class="chart" data-chart="foreign_residents_by_nationality" data-api="/api/foreign-residents/charts"></div>
+    </div>
+    <div class="chart-card">
+      <a class="chart-link" href="/foreign-residents/charts/foreign_residents_by_status">查看表格</a>
+      <div class="chart" data-chart="foreign_residents_by_status" data-api="/api/foreign-residents/charts"></div>
+    </div>
+    <div class="chart-card">
+      <a class="chart-link" href="/foreign-residents/charts/foreign_workers_by_industry">查看表格</a>
+      <div class="chart" data-chart="foreign_workers_by_industry" data-api="/api/foreign-residents/charts"></div>
+    </div>
+    <div class="chart-card">
+      <a class="chart-link" href="/foreign-residents/charts/foreign_workers_by_prefecture">查看表格</a>
+      <div class="chart" data-chart="foreign_workers_by_prefecture" data-api="/api/foreign-residents/charts"></div>
+    </div>
+    <div class="chart-card">
+      <a class="chart-link" href="/foreign-residents/charts/foreign_nominal_wage">查看表格</a>
+      <div class="chart" data-chart="foreign_nominal_wage" data-api="/api/foreign-residents/charts"></div>
+    </div>
+  </div>
+</section>
+
+<section class="grid grid-2 section">
+  <div class="panel">
+    <h2>来源国 Top 10</h2>
+    <div class="table-scroll">
+      <table class="dashboard">
+        <thead><tr><th>国籍/地区</th><th>人数</th></tr></thead>
+        <tbody>
+          {% for row in overview.top_nationalities %}
+          <tr><td>{{ row.dimension_value }}</td><td>{{ "{:,.0f}".format(row.value) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>在留资格 Top 10</h2>
+    <div class="table-scroll">
+      <table class="dashboard">
+        <thead><tr><th>在留资格</th><th>人数</th></tr></thead>
+        <tbody>
+          {% for row in overview.top_statuses %}
+          <tr><td>{{ row.dimension_value }}</td><td>{{ "{:,.0f}".format(row.value) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="grid grid-2 section">
+  <div class="panel">
+    <h2>行业 Top 10</h2>
+    <div class="table-scroll">
+      <table class="dashboard">
+        <thead><tr><th>行业</th><th>劳动者数</th></tr></thead>
+        <tbody>
+          {% for row in overview.top_industries %}
+          <tr><td>{{ row.dimension_value }}</td><td>{{ "{:,.0f}".format(row.value) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>都道府县 Top 10</h2>
+    <div class="table-scroll">
+      <table class="dashboard">
+        <thead><tr><th>都道府县</th><th>劳动者数</th></tr></thead>
+        <tbody>
+          {% for row in overview.top_prefectures %}
+          <tr><td>{{ row.dimension_value }}</td><td>{{ "{:,.0f}".format(row.value) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="panel">
+    <h2>外国人工资分组</h2>
+    <div class="table-scroll">
+      <table class="dashboard">
+        <thead><tr><th>分组</th><th>现金工资（千日元）</th></tr></thead>
+        <tbody>
+          {% for row in overview.wage_groups %}
+          <tr><td>{{ row.dimension_value }}</td><td>{{ "%.1f"|format(row.value) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">工资表当前是年度水平值，不是同比变化。若要判断“是否改善”，需要补齐多期同口径工资数据并结合 CPI。</p>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script src="/static/charts.js"></script>
+{% endblock %}
