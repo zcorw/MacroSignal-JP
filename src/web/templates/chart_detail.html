@@ -5,11 +5,11 @@
   <p class="eyebrow">图表明细 · {{ chart.chart_key }}</p>
   <h1>{{ chart.title }}</h1>
   <p class="summary">{{ chart.description }}</p>
-  <p><a class="label" href="/">返回最新报告</a></p>
+  <p><a class="label" href="{{ back_href|default('/') }}">{{ back_label|default('返回最新报告') }}</a></p>
 </section>
 
 <section class="section">
-  <div class="chart chart-wide" data-chart="{{ chart.chart_key }}"></div>
+  <div class="chart chart-wide" data-chart="{{ chart.chart_key }}" data-api="{{ api_base|default('/api/charts') }}"></div>
 </section>
 
 {% if guide %}
@@ -42,8 +42,8 @@
           <tr>
             <th>日期</th>
             <th>期间</th>
-            {% for item in chart.series %}
-            <th>{{ item.name }}{% if item.unit %} ({{ item.unit }}){% endif %}</th>
+            {% for column in chart.table_columns|default([]) %}
+            <th>{{ column }}</th>
             {% endfor %}
           </tr>
         </thead>
@@ -52,8 +52,8 @@
           <tr>
             <td>{{ row.date }}</td>
             <td>{{ row.period_label }}</td>
-            {% for item in chart.series %}
-            <td>{{ row["values"][item.name]|format_number }}</td>
+            {% for column in chart.table_columns|default([]) %}
+            <td>{{ row["values"][column]|format_number }}</td>
             {% endfor %}
           </tr>
           {% endfor %}

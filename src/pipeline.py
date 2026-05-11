@@ -11,9 +11,21 @@ from src.analyze import analyze
 from src.clean_data import Observation, clean_downloaded_files
 from src.config import AppConfig
 from src.fetch_data import DownloadedFile, download_all
+from src.foreign_clean import (
+    ForeignResidentMetric,
+    ForeignResidentObservation,
+    ForeignWageMetric,
+    ForeignWorkerMetric,
+    clean_foreign_residents,
+)
+from src.foreign_fetch import download_foreign_sources
 from src.indicators import calculate_indicators
 from src.report import to_report_payload
 from src.storage import (
+    foreign_resident_metrics,
+    foreign_resident_observations,
+    foreign_wage_metrics,
+    foreign_worker_metrics,
     get_engine,
     init_db,
     metric_snapshots,
@@ -46,14 +58,36 @@ def run_pipeline(config: AppConfig, mode: str = "normal", retry_missing: bool = 
         if mode == "sample":
             download_results = [DownloadedFile("sample", "success", None, "2024-09", "写入内置样例数据")]
             raw_observations = sample_observations()
+            foreign_observations: list[ForeignResidentObservation] = []
+            foreign_metrics: list[ForeignResidentMetric] = []
+            foreign_worker_metrics_items: list[ForeignWorkerMetric] = []
+            foreign_wage_metrics_items: list[ForeignWageMetric] = []
         else:
             download_results = download_all(config)
+            download_results.extend(download_foreign_sources(config))
             raw_observations = clean_downloaded_files(config.paths.raw_dir, config.paths.manual_dir)
 
         all_observations = calculate_indicators(raw_observations)
+        if mode != "sample":
+            (
+                foreign_observations,
+                foreign_metrics,
+                foreign_worker_metrics_items,
+                foreign_wage_metrics_items,
+            ) = clean_foreign_residents(config.paths.raw_dir, all_observations)
         result = analyze(all_observations)
         payload = to_report_payload(result)
-        persist_run(engine, int(run_id), all_observations, result.metrics, download_results)
+        persist_run(
+            engine,
+            int(run_id),
+            all_observations,
+            result.metrics,
+            download_results,
+            foreign_observations,
+            foreign_metrics,
+            foreign_worker_metrics_items,
+            foreign_wage_metrics_items,
+        )
         replace_report(engine, payload)
 
         with engine.begin() as conn:
@@ -84,17 +118,36 @@ def persist_run(
     observations: list[Observation],
     metrics: list[dict],
     download_results: list[DownloadedFile],
+    foreign_observations: list[ForeignResidentObservation] | None = None,
+    foreign_metrics_items: list[ForeignResidentMetric] | None = None,
+    foreign_worker_metrics_items: list[ForeignWorkerMetric] | None = None,
+    foreign_wage_metrics_items: list[ForeignWageMetric] | None = None,
 ) -> None:
     created_at = now_iso()
+    foreign_observations = foreign_observations or []
+    foreign_metrics_items = foreign_metrics_items or []
+    foreign_worker_metrics_items = foreign_worker_metrics_items or []
+    foreign_wage_metrics_items = foreign_wage_metrics_items or []
     with engine.begin() as conn:
         conn.execute(delete(series_observations))
         conn.execute(delete(metric_snapshots))
-        for item in observations:
-            row = asdict(item)
-            row["created_at"] = created_at
-            conn.execute(insert(series_observations).values(**row).prefix_with("OR REPLACE"))
-        for metric in metrics:
-            conn.execute(insert(metric_snapshots).values(**metric, created_at=created_at).prefix_with("OR REPLACE"))
+        conn.execute(delete(foreign_resident_observations))
+        conn.execute(delete(foreign_resident_metrics))
+        conn.execute(delete(foreign_worker_metrics))
+        conn.execute(delete(foreign_wage_metrics))
+        observation_rows = [asdict(item) | {"created_at": created_at} for item in observations]
+        metric_rows = [metric | {"created_at": created_at} for metric in metrics]
+        foreign_observation_rows = [asdict(item) | {"created_at": created_at} for item in foreign_observations]
+        foreign_metric_rows = [asdict(item) | {"created_at": created_at} for item in foreign_metrics_items]
+        foreign_worker_metric_rows = [asdict(item) | {"created_at": created_at} for item in foreign_worker_metrics_items]
+        foreign_wage_metric_rows = [asdict(item) | {"created_at": created_at} for item in foreign_wage_metrics_items]
+
+        bulk_insert(conn, series_observations, observation_rows)
+        bulk_insert(conn, metric_snapshots, metric_rows)
+        bulk_insert(conn, foreign_resident_observations, foreign_observation_rows)
+        bulk_insert(conn, foreign_resident_metrics, foreign_metric_rows)
+        bulk_insert(conn, foreign_worker_metrics, foreign_worker_metric_rows)
+        bulk_insert(conn, foreign_wage_metrics, foreign_wage_metric_rows)
         for item in download_results:
             conn.execute(
                 insert(source_status).values(
@@ -107,6 +160,14 @@ def persist_run(
                     message=item.message,
                 )
             )
+
+
+def bulk_insert(conn, table, rows: list[dict], chunk_size: int = 5000) -> None:
+    if not rows:
+        return
+    stmt = insert(table).prefix_with("OR REPLACE")
+    for start in range(0, len(rows), chunk_size):
+        conn.execute(stmt, rows[start : start + chunk_size])
 
 
 def sample_observations() -> list[Observation]:

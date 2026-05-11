@@ -98,7 +98,29 @@ docker compose ps
 curl http://127.0.0.1:18000/
 curl http://127.0.0.1:18000/api/latest
 curl http://127.0.0.1:18000/api/charts/gdp_growth
+curl http://127.0.0.1:18000/foreign-residents
+curl http://127.0.0.1:18000/api/foreign-residents
 ```
+
+外国人趋势专题会随 `docker compose run --rm app python run.py` 一起下载和清洗以下官方数据：
+
+- e-Stat 在留外国人統計
+- 厚生労働省 外国人雇用状況の届出状況
+- e-Stat 賃金構造基本統計調査 外国人労働者
+
+首次真实数据运行后，可重点检查：
+
+```bash
+curl http://127.0.0.1:18000/api/foreign-residents/charts/foreign_residents_total
+curl http://127.0.0.1:18000/api/foreign-residents/charts/foreign_workers_by_industry
+curl http://127.0.0.1:18000/api/foreign-residents/charts/foreign_nominal_wage
+```
+
+已知限制：
+
+- 外国人雇用数据是每年 10 月末口径。
+- 外国人工资数据当前为年度水平值；在多期历史工资文件接入前，不应把单期工资水平解释为工资同比改善。
+- 在留外国人、外国人雇用、工资三类数据发布时间和统计口径不同，页面会以保守方式展示置信度。
 
 ## 7. 配置 cron 定时任务
 

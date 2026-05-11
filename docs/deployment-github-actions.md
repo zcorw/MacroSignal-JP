@@ -124,7 +124,20 @@ docker compose ps
 docker compose logs --tail 100 web
 curl http://127.0.0.1:18000/
 curl http://127.0.0.1:18000/api/latest
+curl http://127.0.0.1:18000/foreign-residents
+curl http://127.0.0.1:18000/api/foreign-residents
 ```
+
+外国人趋势专题也会在自动部署流程中随完整数据管道更新。部署完成后建议额外验证：
+
+```bash
+curl http://127.0.0.1:18000/api/foreign-residents/charts/foreign_residents_total
+curl http://127.0.0.1:18000/api/foreign-residents/charts/foreign_workers_by_industry
+curl http://127.0.0.1:18000/api/foreign-residents/charts/foreign_nominal_wage
+curl http://127.0.0.1:18000/sources
+```
+
+如果 GitHub Actions 成功但页面没有外国人专题数据，优先检查 VPS 上的 `logs/app.log`，确认 e-Stat 和厚生労働省文件是否下载成功。
 
 ## 7. 常见错误
 

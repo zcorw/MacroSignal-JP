@@ -35,6 +35,7 @@ h2 { margin: 0 0 14px; font-size: 20px; }
 .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .panel, .empty { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px; }
 .score-value { font-size: 34px; line-height: 1; font-weight: 700; }
+.small-score { font-size: 28px; }
 .evidence { margin: 0; padding-left: 18px; }
 .evidence li + li { margin-top: 8px; }
 .dashboard { width: 100%; border-collapse: collapse; font-size: 14px; }

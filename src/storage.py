@@ -155,6 +155,108 @@ chart_series = Table(
     UniqueConstraint("chart_key", "series_key", name="uq_chart_series"),
 )
 
+foreign_resident_observations = Table(
+    "foreign_resident_observations",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("date", String, nullable=False),
+    Column("year", Integer, nullable=False),
+    Column("month", Integer, nullable=False),
+    Column("nationality", String, nullable=False),
+    Column("nationality_code", String),
+    Column("residence_status", String, nullable=False),
+    Column("residence_status_code", String),
+    Column("prefecture", String, nullable=False),
+    Column("prefecture_code", String),
+    Column("gender", String),
+    Column("age_group", String),
+    Column("age", String),
+    Column("value", Integer, nullable=False),
+    Column("unit", String, nullable=False),
+    Column("source_name", String, nullable=False),
+    Column("source_file", String, nullable=False),
+    Column("created_at", String, nullable=False),
+    UniqueConstraint(
+        "date",
+        "nationality",
+        "residence_status",
+        "prefecture",
+        "gender",
+        "age",
+        "source_name",
+        name="uq_foreign_resident_observation",
+    ),
+)
+
+foreign_resident_metrics = Table(
+    "foreign_resident_metrics",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("date", String, nullable=False),
+    Column("metric_key", String, nullable=False),
+    Column("dimension", String, nullable=False),
+    Column("dimension_value", String, nullable=False),
+    Column("value", Float),
+    Column("unit", String, nullable=False),
+    Column("source_name", String, nullable=False),
+    Column("source_file", String, nullable=False),
+    Column("created_at", String, nullable=False),
+    UniqueConstraint(
+        "date",
+        "metric_key",
+        "dimension",
+        "dimension_value",
+        "source_name",
+        name="uq_foreign_resident_metric",
+    ),
+)
+
+foreign_worker_metrics = Table(
+    "foreign_worker_metrics",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("date", String, nullable=False),
+    Column("metric_key", String, nullable=False),
+    Column("dimension", String, nullable=False),
+    Column("dimension_value", String, nullable=False),
+    Column("value", Float),
+    Column("unit", String, nullable=False),
+    Column("source_name", String, nullable=False),
+    Column("source_file", String, nullable=False),
+    Column("created_at", String, nullable=False),
+    UniqueConstraint(
+        "date",
+        "metric_key",
+        "dimension",
+        "dimension_value",
+        "source_name",
+        name="uq_foreign_worker_metric",
+    ),
+)
+
+foreign_wage_metrics = Table(
+    "foreign_wage_metrics",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("date", String, nullable=False),
+    Column("metric_key", String, nullable=False),
+    Column("dimension", String, nullable=False),
+    Column("dimension_value", String, nullable=False),
+    Column("value", Float),
+    Column("unit", String, nullable=False),
+    Column("source_name", String, nullable=False),
+    Column("source_file", String, nullable=False),
+    Column("created_at", String, nullable=False),
+    UniqueConstraint(
+        "date",
+        "metric_key",
+        "dimension",
+        "dimension_value",
+        "source_name",
+        name="uq_foreign_wage_metric",
+    ),
+)
+
 
 def get_engine(db_path: Path | str) -> Engine:
     path = Path(db_path)
@@ -347,6 +449,314 @@ def chart_payload(engine: Engine, chart_key: str) -> dict[str, Any] | None:
             "dates": dates,
             "x_axis": labels,
             "series": series_payload,
+            "table_columns": [item["display_name"] for item, _ in values_by_series],
             "table_rows": table_rows,
             "source_note": "数据来自官方数据源或已标注的手动文件，按项目规则清洗计算。",
         }
+
+
+FOREIGN_CHART_META = {
+    "foreign_residents_total": {
+        "title": "在留外国人总数趋势",
+        "description": "观察日本在留外国人规模是否持续扩大。上升代表总人数增加，但需要结合在留资格结构判断是临时劳动力增加，还是长期定居增加。",
+        "chart_type": "line",
+        "source_note": "数据来自 e-Stat 在留外国人统计明细表，按国籍、在留资格、都道府县等维度汇总。",
+    },
+    "foreign_residents_by_nationality": {
+        "title": "来源国 Top 10",
+        "description": "观察主要来源国结构。某一国家占比快速上升，可能代表劳动力来源更集中；来源更分散通常代表接收结构更丰富。",
+        "chart_type": "bar",
+        "source_note": "人数和占比按最新一期在留外国人明细表汇总。",
+    },
+    "foreign_residents_by_status": {
+        "title": "在留资格结构 Top 10",
+        "description": "观察外国人从技能实习、特定技能等工作型资格，向永住者、定住者等长期定居型资格变化的程度。",
+        "chart_type": "pie",
+        "source_note": "在留资格口径来自 e-Stat 在留外国人统计明细表。",
+    },
+    "foreign_workers_by_industry": {
+        "title": "外国人劳动者行业分布 Top 10",
+        "description": "观察外国人劳动者集中在哪些行业。制造业、建设、住宿餐饮、护理等行业占比高，说明相关行业对外国劳动力依赖更明显。",
+        "chart_type": "bar",
+        "source_note": "数据来自厚生労働省“外国人雇用状況の届出状況”，年度 10 月末口径。",
+    },
+    "foreign_workers_by_prefecture": {
+        "title": "外国人劳动者都道府县排名 Top 10",
+        "description": "观察外国人劳动者集中在哪些地区。人数高不等于依赖度高，后续还需要结合当地总人口或就业人口计算比例。",
+        "chart_type": "bar",
+        "source_note": "数据来自厚生労働省“外国人雇用状況の届出状況”，年度 10 月末口径。",
+    },
+    "foreign_nominal_wage": {
+        "title": "外国人工资水平",
+        "description": "观察不同在留资格分组的外国人月度现金工资水平。工资更高通常意味着待遇更好，但不能直接等同于实际购买力改善。",
+        "chart_type": "bar",
+        "source_note": "数据来自 e-Stat 賃金構造基本統計調査“外国人労働者”表。当前为年度水平值，不是同比。",
+    },
+}
+
+
+def foreign_residents_overview(engine: Engine) -> dict[str, Any]:
+    with engine.connect() as conn:
+        latest_date = conn.execute(
+            select(func.max(foreign_resident_metrics.c.date))
+        ).scalar_one_or_none()
+        if latest_date is None:
+            return {"available": False, "message": "还没有外国人在留数据。请先运行数据管线。"}
+
+        metric_rows = conn.execute(
+            select(foreign_resident_metrics).where(foreign_resident_metrics.c.date == latest_date)
+        ).mappings().all()
+        latest_metrics = [dict(row) for row in metric_rows]
+        metric_lookup = {
+            (row["metric_key"], row["dimension"], row["dimension_value"]): row for row in latest_metrics
+        }
+        total = metric_lookup.get(("foreign_residents_total", "total", "all"))
+        long_term = metric_lookup.get(
+            ("long_term_settlement_share", "residence_status_group", "long_term_settlement")
+        )
+        top_nationalities = [
+            row for row in latest_metrics if row["metric_key"] == "foreign_residents_by_nationality"
+        ]
+        top_statuses = [
+            row for row in latest_metrics if row["metric_key"] == "foreign_residents_by_status"
+        ]
+        top_nationalities = sorted(top_nationalities, key=lambda row: row["value"] or 0, reverse=True)
+        top_statuses = sorted(top_statuses, key=lambda row: row["value"] or 0, reverse=True)
+
+        source_status_row = conn.execute(
+            select(source_status)
+            .where(source_status.c.source_name == "e-Stat Foreign Residents")
+            .order_by(desc(source_status.c.id))
+            .limit(1)
+        ).mappings().one_or_none()
+
+        summary_label = foreign_residents_label(float(total["value"] or 0), float(long_term["value"] or 0) if long_term else None)
+        summary_text = foreign_residents_summary(latest_date, total, long_term, top_nationalities, top_statuses)
+        worker_latest = latest_metric_date(conn, foreign_worker_metrics)
+        wage_latest = latest_metric_date(conn, foreign_wage_metrics)
+        worker_metrics = metrics_for_date(conn, foreign_worker_metrics, worker_latest) if worker_latest else []
+        wage_metrics = metrics_for_date(conn, foreign_wage_metrics, wage_latest) if wage_latest else []
+        scores = foreign_policy_scores(latest_metrics, worker_metrics, wage_metrics)
+
+        return {
+            "available": True,
+            "latest_date": latest_date,
+            "worker_latest_date": worker_latest,
+            "wage_latest_date": wage_latest,
+            "summary_label": summary_label,
+            "summary_text": summary_text,
+            "scores": scores,
+            "evidence": foreign_policy_evidence(total, long_term, top_nationalities, top_statuses, worker_metrics, wage_metrics, scores),
+            "total": dict(total) if total else None,
+            "long_term_share": dict(long_term) if long_term else None,
+            "top_nationalities": top_nationalities,
+            "top_statuses": top_statuses,
+            "top_industries": sorted([row for row in worker_metrics if row["metric_key"] == "foreign_workers_by_industry"], key=lambda row: row["value"] or 0, reverse=True),
+            "top_prefectures": sorted([row for row in worker_metrics if row["metric_key"] == "foreign_workers_by_prefecture"], key=lambda row: row["value"] or 0, reverse=True),
+            "wage_groups": sorted([row for row in wage_metrics if row["metric_key"] == "foreign_nominal_wage"], key=lambda row: row["value"] or 0, reverse=True),
+            "source_status": dict(source_status_row) if source_status_row else None,
+            "charts": [
+                foreign_residents_chart_payload(conn, "foreign_residents_total"),
+                foreign_residents_chart_payload(conn, "foreign_residents_by_nationality"),
+                foreign_residents_chart_payload(conn, "foreign_residents_by_status"),
+                foreign_residents_chart_payload(conn, "foreign_workers_by_industry"),
+                foreign_residents_chart_payload(conn, "foreign_workers_by_prefecture"),
+                foreign_residents_chart_payload(conn, "foreign_nominal_wage"),
+            ],
+        }
+
+
+def foreign_residents_label(total: float, long_term_share: float | None) -> str:
+    if not total:
+        return "数据仍不明确"
+    if long_term_share is not None and long_term_share >= 45:
+        return "长期定居型特征较强"
+    if long_term_share is not None and long_term_share >= 30:
+        return "劳动力接收与长期定居并存"
+    return "仍需观察是否转向长期定居"
+
+
+def foreign_residents_summary(
+    latest_date: str,
+    total: dict[str, Any] | None,
+    long_term: dict[str, Any] | None,
+    top_nationalities: list[dict[str, Any]],
+    top_statuses: list[dict[str, Any]],
+) -> str:
+    total_value = int(total["value"]) if total and total["value"] is not None else None
+    leader = top_nationalities[0]["dimension_value"] if top_nationalities else "未知"
+    status_leader = top_statuses[0]["dimension_value"] if top_statuses else "未知"
+    parts = [f"最新数据期为 {latest_date}。"]
+    if total_value is not None:
+        parts.append(f"在留外国人总数为 {total_value:,} 人。")
+    parts.append(f"当前来源国人数最高的是 {leader}，在留资格人数最高的是 {status_leader}。")
+    if long_term and long_term["value"] is not None:
+        parts.append(f"长期定居型在留资格占比约 {float(long_term['value']):.1f}%。")
+    parts.append("由于当前自动链路先接入最新一期数据，趋势判断需要后续补齐多期历史文件后再提高置信度。")
+    return "".join(parts)
+
+
+def latest_metric_date(conn: Any, table: Table) -> str | None:
+    return conn.execute(select(func.max(table.c.date))).scalar_one_or_none()
+
+
+def metrics_for_date(conn: Any, table: Table, date_value: str) -> list[dict[str, Any]]:
+    return [
+        dict(row)
+        for row in conn.execute(select(table).where(table.c.date == date_value)).mappings().all()
+    ]
+
+
+def foreign_policy_scores(
+    resident_metrics: list[dict[str, Any]],
+    worker_metrics_rows: list[dict[str, Any]],
+    wage_metrics_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    resident_lookup = {(row["metric_key"], row["dimension"], row["dimension_value"]): row for row in resident_metrics}
+    long_term = resident_lookup.get(("long_term_settlement_share", "residence_status_group", "long_term_settlement"))
+    industry_concentration = next((row for row in worker_metrics_rows if row["metric_key"] == "industry_concentration_top3"), None)
+    all_wage = next(
+        (
+            row
+            for row in wage_metrics_rows
+            if row["metric_key"] == "foreign_nominal_wage" and row["dimension_value"] == "外国人労働者"
+        ),
+        None,
+    )
+    settlement_score = min(100.0, float(long_term["value"] or 0) * 2) if long_term else 30.0
+    labor_dependency_score = min(100.0, float(industry_concentration["value"] or 0) * 1.4) if industry_concentration else 40.0
+    wage_improvement_score = 50.0
+    if all_wage and all_wage["value"] is not None:
+        wage_improvement_score = 65.0 if float(all_wage["value"]) >= 275 else 45.0
+    if settlement_score >= 70:
+        label = "长期定居型社会倾向增强"
+    elif labor_dependency_score >= 65:
+        label = "仍偏劳动力补充型"
+    else:
+        label = "劳动力接收与定居化并存"
+    confidence = "中" if worker_metrics_rows and wage_metrics_rows else "低"
+    return {
+        "settlement_score": settlement_score,
+        "labor_dependency_score": labor_dependency_score,
+        "wage_improvement_score": wage_improvement_score,
+        "label": label,
+        "confidence": confidence,
+    }
+
+
+def foreign_policy_evidence(
+    total: dict[str, Any] | None,
+    long_term: dict[str, Any] | None,
+    top_nationalities: list[dict[str, Any]],
+    top_statuses: list[dict[str, Any]],
+    worker_metrics_rows: list[dict[str, Any]],
+    wage_metrics_rows: list[dict[str, Any]],
+    scores: dict[str, Any],
+) -> list[str]:
+    evidence: list[str] = []
+    if total and total["value"] is not None:
+        evidence.append(f"最新在留外国人总数为 {int(total['value']):,} 人，说明外国人口规模已经具有宏观观察意义。")
+    if long_term and long_term["value"] is not None:
+        evidence.append(f"长期定居型在留资格占比约 {float(long_term['value']):.1f}%，用于判断是否从临时接收转向长期居住。")
+    if top_nationalities:
+        evidence.append(f"来源国人数最高的是 {top_nationalities[0]['dimension_value']}，需要观察来源是否过度集中。")
+    if top_statuses:
+        evidence.append(f"人数最高的在留资格是 {top_statuses[0]['dimension_value']}，结构比总数更能说明政策性质。")
+    top_industry = next((row for row in worker_metrics_rows if row["metric_key"] == "foreign_workers_by_industry"), None)
+    if top_industry:
+        evidence.append(f"外国人劳动者最多的行业是 {top_industry['dimension_value']}，显示行业层面的劳动力需求集中。")
+    all_wage = next((row for row in wage_metrics_rows if row["metric_key"] == "foreign_nominal_wage" and row["dimension_value"] == "外国人労働者"), None)
+    if all_wage:
+        evidence.append(f"工资结构调查中外国人劳动者现金工资为 {float(all_wage['value']):.1f} 千日元；当前是水平值，不能直接当作同比改善。")
+    evidence.append(f"综合判断为“{scores['label']}”，置信度为{scores['confidence']}；多期历史数据补齐前应保持保守。")
+    return evidence
+
+
+def foreign_residents_chart_payload(conn: Any, chart_key: str) -> dict[str, Any] | None:
+    meta = FOREIGN_CHART_META.get(chart_key)
+    if meta is None:
+        return None
+    if chart_key == "foreign_residents_total":
+        rows = conn.execute(
+            select(
+                foreign_resident_metrics.c.date,
+                foreign_resident_metrics.c.value,
+            )
+            .where(foreign_resident_metrics.c.metric_key == "foreign_residents_total")
+            .where(foreign_resident_metrics.c.dimension == "total")
+            .order_by(foreign_resident_metrics.c.date)
+        ).mappings().all()
+        dates = [row["date"] for row in rows]
+        values = [row["value"] for row in rows]
+        return {
+            "chart_key": chart_key,
+            "title": meta["title"],
+            "description": meta["description"],
+            "chart_type": meta["chart_type"],
+            "dates": dates,
+            "x_axis": dates,
+            "series": [{"name": "在留外国人总数", "axis": "left", "unit": "人", "data": values}],
+            "table_columns": ["在留外国人总数"],
+            "table_rows": [
+                {"date": row["date"], "period_label": row["date"], "values": {"在留外国人总数": row["value"]}}
+                for row in rows
+            ],
+            "source_note": meta["source_note"],
+        }
+
+    metric_table = foreign_chart_table(chart_key)
+    latest_date = conn.execute(
+        select(func.max(metric_table.c.date)).where(
+            metric_table.c.metric_key == chart_key
+        )
+    ).scalar_one_or_none()
+    if latest_date is None:
+        return None
+    count_rows = conn.execute(
+        select(metric_table)
+        .where(metric_table.c.metric_key == chart_key)
+        .where(metric_table.c.date == latest_date)
+        .order_by(desc(metric_table.c.value))
+    ).mappings().all()
+    share_rows = conn.execute(
+        select(metric_table)
+        .where(metric_table.c.metric_key == f"{chart_key}_share")
+        .where(metric_table.c.date == latest_date)
+    ).mappings().all()
+    share_by_value = {row["dimension_value"]: row["value"] for row in share_rows}
+    labels = [row["dimension_value"] for row in count_rows]
+    values = [row["value"] for row in count_rows]
+    value_label = "工资" if chart_key == "foreign_nominal_wage" else "人数"
+    value_unit = "千日元" if chart_key == "foreign_nominal_wage" else "人"
+    table_columns = [value_label] if not share_rows else [value_label, "占比"]
+    table_rows = [
+        {
+            "date": latest_date,
+            "period_label": row["dimension_value"],
+            "values": {
+                value_label: row["value"],
+                "占比": share_by_value.get(row["dimension_value"]),
+            },
+        }
+        for row in count_rows
+    ]
+    return {
+        "chart_key": chart_key,
+        "title": meta["title"],
+        "description": meta["description"],
+        "chart_type": meta["chart_type"],
+        "dates": [latest_date],
+        "x_axis": labels,
+        "series": [{"name": value_label, "axis": "left", "unit": value_unit, "data": values}],
+        "table_columns": table_columns,
+        "table_rows": table_rows,
+        "source_note": meta["source_note"],
+    }
+
+
+def foreign_chart_table(chart_key: str) -> Table:
+    if chart_key.startswith("foreign_workers_") or chart_key == "industry_concentration_top3":
+        return foreign_worker_metrics
+    if chart_key.startswith("foreign_nominal_wage") or chart_key.startswith("foreign_wage"):
+        return foreign_wage_metrics
+    return foreign_resident_metrics
