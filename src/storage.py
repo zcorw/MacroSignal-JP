@@ -333,12 +333,20 @@ def chart_payload(engine: Engine, chart_key: str) -> dict[str, Any] | None:
                     "data": [series_values.get(date_key) for date_key in dates],
                 }
             )
+        table_rows = []
+        for date_key, label in zip(dates, labels):
+            values = {}
+            for item, series_values in values_by_series:
+                values[item["display_name"]] = series_values.get(date_key)
+            table_rows.append({"date": date_key, "period_label": label, "values": values})
         return {
             "chart_key": chart["chart_key"],
             "title": chart["title"],
             "description": chart["description"],
             "chart_type": chart["chart_type"],
+            "dates": dates,
             "x_axis": labels,
             "series": series_payload,
+            "table_rows": table_rows,
             "source_note": "数据来自官方数据源或已标注的手动文件，按项目规则清洗计算。",
         }

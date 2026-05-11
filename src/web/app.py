@@ -66,6 +66,71 @@ templates.env.filters["metric_label"] = metric_label
 templates.env.filters["metric_help"] = metric_help
 templates.env.filters["format_number"] = format_number
 
+CHART_GUIDES = {
+    "gdp_growth": [
+        {
+            "name": "名义 GDP YoY",
+            "up": "上升代表按当前价格计算的经济规模增长更快，可能来自真实产出增加，也可能来自物价上涨。",
+            "down": "下降代表账面经济规模增长放慢；如果仍高于实际 GDP，说明价格因素仍在支撑名义增长。",
+            "watch": "重点和实际 GDP YoY 对比。两者差距越大，越要警惕“看起来增长、实际产出改善有限”。",
+        },
+        {
+            "name": "实际 GDP YoY",
+            "up": "上升代表扣除物价影响后，真实产出改善更明显，是判断真实增长的核心指标。",
+            "down": "下降代表真实产出放慢；如果转负，说明经济实际产出比去年同期减少。",
+            "watch": "如果实际 GDP 为正且连续多个季度改善，真实增长证据才更扎实。",
+        },
+    ],
+    "wage_vs_cpi": [
+        {
+            "name": "实际工资 YoY",
+            "up": "上升代表工资购买力改善，居民同样工资能买到更多商品和服务。",
+            "down": "下降代表工资购买力变弱；若长期为负，消费恢复通常缺少基础。",
+            "watch": "重点看是否稳定高于 0，而不是单月偶然转正。",
+        },
+        {
+            "name": "CPI YoY",
+            "up": "上升代表居民生活成本上涨更快，食品、能源和服务价格压力可能加大。",
+            "down": "下降代表通胀压力缓和；但过低或转负也可能说明需求疲弱。",
+            "watch": "如果 CPI 高于工资增长，居民实际购买力会被挤压。",
+        },
+    ],
+    "private_consumption": [
+        {
+            "name": "民间消费 YoY",
+            "up": "上升代表居民实际消费改善，是判断政策是否惠及家庭部门的重要信号。",
+            "down": "下降代表居民消费走弱，可能来自实际工资不足、物价压力或信心下降。",
+            "watch": "如果工资改善但消费没有改善，说明居民可能仍偏谨慎。",
+        },
+    ],
+    "private_investment": [
+        {
+            "name": "企业设备投资 YoY",
+            "up": "上升代表企业更愿意扩产、更新设备或投资生产能力，有利于中长期真实增长。",
+            "down": "下降代表企业投资意愿走弱，可能说明需求预期不足或融资成本压力上升。",
+            "watch": "持续为正比单季度跳升更重要，因为设备投资波动较大。",
+        },
+    ],
+    "market_pressure": [
+        {
+            "name": "USDJPY",
+            "up": "上升代表 1 美元能兑换更多日元，也就是日元贬值。日元贬值会推高进口能源、食品和原材料成本。",
+            "down": "下降代表日元升值，进口成本压力通常缓和，但也可能压制出口企业换算收益。",
+            "watch": "如果 USDJPY 上升同时 CPI 上升，要警惕输入型通胀。",
+        },
+        {
+            "name": "JGB 10Y",
+            "up": "上升代表日本长期国债收益率上行，市场要求更高利率补偿，可能反映通胀、加息或财政信任压力。",
+            "down": "下降代表长期利率压力缓和，但也可能反映增长预期偏弱或避险需求。",
+            "watch": "如果 10年和30年收益率都快速上升，财政压力信号更强。",
+        },
+    ],
+}
+
+
+def chart_guide(chart_key: str) -> list[dict[str, str]]:
+    return CHART_GUIDES.get(chart_key, [])
+
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
@@ -89,6 +154,14 @@ def report_detail(request: Request, report_id: int):
 @app.get("/sources", response_class=HTMLResponse)
 def sources_page(request: Request):
     return templates.TemplateResponse(request, "sources.html", {"sources": list_sources(engine)})
+
+
+@app.get("/charts/{chart_key}", response_class=HTMLResponse)
+def chart_detail_page(request: Request, chart_key: str):
+    payload = chart_payload(engine, chart_key)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="chart_not_found")
+    return templates.TemplateResponse(request, "chart_detail.html", {"chart": payload, "guide": chart_guide(chart_key)})
 
 
 @app.get("/api/latest")

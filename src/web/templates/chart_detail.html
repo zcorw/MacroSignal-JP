@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}图表明细{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">图表明细 · {{ chart.chart_key }}</p>
+  <h1>{{ chart.title }}</h1>
+  <p class="summary">{{ chart.description }}</p>
+  <p><a class="label" href="/">返回最新报告</a></p>
+</section>
+
+<section class="section">
+  <div class="chart chart-wide" data-chart="{{ chart.chart_key }}"></div>
+</section>
+
+{% if guide %}
+<section class="section">
+  <div class="panel">
+    <h2>如何解读这个图表</h2>
+    <div class="guide-list">
+      {% for item in guide %}
+      <article class="guide-item">
+        <h3>{{ item.name }}</h3>
+        <p><strong>上升：</strong>{{ item.up }}</p>
+        <p><strong>下降：</strong>{{ item.down }}</p>
+        <p><strong>观察重点：</strong>{{ item.watch }}</p>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<section class="section">
+  <div class="panel">
+    <div class="table-heading">
+      <h2>数据表格</h2>
+      <p class="muted">{{ chart.source_note }}</p>
+    </div>
+    <div class="table-scroll">
+      <table class="dashboard">
+        <thead>
+          <tr>
+            <th>日期</th>
+            <th>期间</th>
+            {% for item in chart.series %}
+            <th>{{ item.name }}{% if item.unit %} ({{ item.unit }}){% endif %}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in chart.table_rows|reverse %}
+          <tr>
+            <td>{{ row.date }}</td>
+            <td>{{ row.period_label }}</td>
+            {% for item in chart.series %}
+            <td>{{ row["values"][item.name]|format_number }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/charts.js"></script>
+{% endblock %}
