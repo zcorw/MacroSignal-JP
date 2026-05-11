@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from openpyxl import load_workbook
 import pandas as pd
 
 from src.clean_data import Observation
@@ -98,6 +99,7 @@ def clean_foreign_residents(
         logger.info("开始聚合清洗在留外国人文件：%s", path)
         resident_metrics.extend(clean_foreign_resident_metrics_file(path))
         logger.info("在留外国人指标累计 %d 条", len(resident_metrics))
+    resident_metrics.extend(calculate_foreign_resident_change_metrics(resident_metrics))
 
     logger.info("开始清洗外国人劳动者指标")
     worker_metrics = clean_foreign_worker_metrics(source_dir)
@@ -110,36 +112,214 @@ def clean_foreign_residents(
 
 
 def clean_foreign_resident_metrics_file(path: Path) -> list[ForeignResidentMetric]:
-    xls = pd.ExcelFile(path)
-    detail_sheet = find_detail_sheet(xls.sheet_names)
-    if detail_sheet is None:
-        return []
-
-    year, month = parse_period_from_sheet(detail_sheet)
-    period_date = month_end(year, month)
-    columns = {"国籍・地域", "在留資格", "都道府県", "在留外国人数"}
-    df = pd.read_excel(path, sheet_name=detail_sheet, dtype=str, usecols=lambda name: name in columns)
-    logger.info("读取在留外国人聚合字段 sheet=%s：%d 行", detail_sheet, len(df))
     required = {"国籍・地域", "在留資格", "都道府県", "在留外国人数"}
-    if not required.issubset(set(df.columns)):
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    try:
+        detail_sheet = find_detail_sheet(workbook.sheetnames)
+        if detail_sheet is None:
+            return []
+
+        year, month = parse_period_from_sheet(detail_sheet)
+        period_date = month_end(year, month)
+        sheet = workbook[detail_sheet]
+        rows = sheet.iter_rows(values_only=True)
+        header = next(rows, None)
+        if header is None:
+            return []
+
+        column_index = {clean_text(name): index for index, name in enumerate(header) if clean_text(name)}
+        if not required.issubset(set(column_index)):
+            logger.warning("在留外国人文件缺少必要列：%s", path)
+            return []
+
+        nationality_totals: dict[str, float] = {}
+        status_totals: dict[str, float] = {}
+        total = 0.0
+        long_term_total = 0.0
+        row_count = 0
+        valid_count = 0
+
+        for row in rows:
+            row_count += 1
+            value = parse_int(row[column_index["在留外国人数"]])
+            if value is None:
+                continue
+
+            _, nationality = split_code_label(row[column_index["国籍・地域"]])
+            _, residence_status = split_code_label(row[column_index["在留資格"]])
+            if not nationality or not residence_status:
+                continue
+
+            numeric_value = float(value)
+            total += numeric_value
+            valid_count += 1
+            nationality_totals[nationality] = nationality_totals.get(nationality, 0.0) + numeric_value
+            status_totals[residence_status] = status_totals.get(residence_status, 0.0) + numeric_value
+            if is_long_term_status(residence_status):
+                long_term_total += numeric_value
+
+            if row_count % 100000 == 0:
+                logger.info("在留外国人流式聚合进度 sheet=%s：已扫描 %d 行", detail_sheet, row_count)
+
+        logger.info("在留外国人流式聚合完成 sheet=%s：扫描 %d 行，有效 %d 行", detail_sheet, row_count, valid_count)
+        return calculate_foreign_resident_metrics_from_aggregates(
+            date_value=period_date,
+            source_file=str(path),
+            total=total,
+            nationality_totals=nationality_totals,
+            status_totals=status_totals,
+            long_term_total=long_term_total,
+        )
+    finally:
+        workbook.close()
+
+
+def calculate_foreign_resident_metrics_from_aggregates(
+    date_value: str,
+    source_file: str,
+    total: float,
+    nationality_totals: dict[str, float],
+    status_totals: dict[str, float],
+    long_term_total: float,
+) -> list[ForeignResidentMetric]:
+    if not total:
         return []
 
-    df = df.rename(
-        columns={
-            "国籍・地域": "nationality",
-            "在留資格": "residence_status",
-            "都道府県": "prefecture",
-            "在留外国人数": "value",
-        }
+    source_name = "e-Stat Foreign Residents"
+    metrics = [
+        ForeignResidentMetric(
+            date=date_value,
+            metric_key="foreign_residents_total",
+            dimension="total",
+            dimension_value="all",
+            value=total,
+            unit="persons",
+            source_name=source_name,
+            source_file=source_file,
+        )
+    ]
+    metrics.extend(
+        calculate_top_aggregate_share_metrics(
+            date_value,
+            "nationality",
+            "foreign_residents_by_nationality",
+            nationality_totals,
+            total,
+            source_file,
+        )
     )
-    df["nationality"] = df["nationality"].map(lambda value: split_code_label(value)[1])
-    df["residence_status"] = df["residence_status"].map(lambda value: split_code_label(value)[1])
-    df["prefecture"] = df["prefecture"].map(lambda value: split_code_label(value)[1])
-    df["value"] = pd.to_numeric(df["value"].str.replace(",", "", regex=False), errors="coerce")
-    df = df.dropna(subset=["value"])
-    df["date"] = period_date
-    df["source_file"] = str(path)
-    return calculate_foreign_resident_metrics_from_frame(df)
+    metrics.extend(
+        calculate_top_aggregate_share_metrics(
+            date_value,
+            "residence_status",
+            "foreign_residents_by_status",
+            status_totals,
+            total,
+            source_file,
+        )
+    )
+    metrics.append(
+        ForeignResidentMetric(
+            date=date_value,
+            metric_key="long_term_settlement_share",
+            dimension="residence_status_group",
+            dimension_value="long_term_settlement",
+            value=float(long_term_total / total * 100),
+            unit="%",
+            source_name=source_name,
+            source_file=source_file,
+        )
+    )
+    return metrics
+
+
+def calculate_top_aggregate_share_metrics(
+    date_value: str,
+    dimension: str,
+    metric_key: str,
+    totals: dict[str, float],
+    total: float,
+    source_file: str,
+) -> list[ForeignResidentMetric]:
+    metrics: list[ForeignResidentMetric] = []
+    for dimension_value, value in sorted(totals.items(), key=lambda item: item[1], reverse=True)[:10]:
+        metrics.append(
+            ForeignResidentMetric(
+                date=date_value,
+                metric_key=metric_key,
+                dimension=dimension,
+                dimension_value=dimension_value,
+                value=float(value),
+                unit="persons",
+                source_name="e-Stat Foreign Residents",
+                source_file=source_file,
+            )
+        )
+        metrics.append(
+            ForeignResidentMetric(
+                date=date_value,
+                metric_key=f"{metric_key}_share",
+                dimension=dimension,
+                dimension_value=dimension_value,
+                value=float(value / total * 100),
+                unit="%",
+                source_name="e-Stat Foreign Residents",
+                source_file=source_file,
+            )
+        )
+    return metrics
+
+
+def calculate_foreign_resident_change_metrics(metrics: list[ForeignResidentMetric]) -> list[ForeignResidentMetric]:
+    totals = [
+        item
+        for item in metrics
+        if item.metric_key == "foreign_residents_total"
+        and item.dimension == "total"
+        and item.dimension_value == "all"
+        and item.value is not None
+    ]
+    if len(totals) < 2:
+        return []
+
+    source_name = "e-Stat Foreign Residents"
+    value_by_date = {item.date: float(item.value or 0) for item in totals}
+    source_by_date = {item.date: item.source_file for item in totals}
+    out: list[ForeignResidentMetric] = []
+
+    for current_date, current_value in sorted(value_by_date.items()):
+        current = pd.Timestamp(current_date)
+        previous_year = (current - pd.DateOffset(years=1)).date().isoformat()
+        previous_five_years = (current - pd.DateOffset(years=5)).date().isoformat()
+        if previous_year in value_by_date and value_by_date[previous_year]:
+            yoy = (current_value / value_by_date[previous_year] - 1) * 100
+            out.append(
+                ForeignResidentMetric(
+                    current_date,
+                    "foreign_residents_yoy",
+                    "total",
+                    "all",
+                    float(yoy),
+                    "%",
+                    source_name,
+                    source_by_date.get(current_date, ""),
+                )
+            )
+        if previous_five_years in value_by_date and value_by_date[previous_five_years]:
+            cagr = (current_value / value_by_date[previous_five_years]) ** (1 / 5) - 1
+            out.append(
+                ForeignResidentMetric(
+                    current_date,
+                    "foreign_residents_cagr_5y",
+                    "total",
+                    "all",
+                    float(cagr * 100),
+                    "%",
+                    source_name,
+                    source_by_date.get(current_date, ""),
+                )
+            )
+    return out
 
 
 def clean_foreign_resident_file(path: Path) -> list[ForeignResidentObservation]:
